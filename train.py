@@ -11,16 +11,18 @@ import mambaTF.losses
 import mambaTF.metrics
 import mambaTF.utils
 from mambaTF.system import make_optimizer
-from dataclasses import dataclass
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader
-import pytorch_lightning as pl
+#from dataclasses import dataclass
+#from torch.optim.lr_scheduler import ReduceLROnPlateau
+#from torch.utils.data import DataLoader
+#import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, RichProgressBar
 from pytorch_lightning.callbacks.progress.rich_progress import *
 #from rich.console import Console
 from pytorch_lightning.loggers import TensorBoardLogger
 
-# # # # # # tensorboard --logdir=/nas/home/gfraticcioli/projects/MambaTransfer/Experiments/tensorboard_logs --bind_all
+# # # # # # ssh -NfL 6006:localhost:6006 gfraticcioli@10.79.251.109    (Hack)
+#### Run on SSH shell ->
+# # # # # # tensorboard --logdir=/nas/home/gfraticcioli/projects/MambaTransfer/Experiments/tensorboard_logs/MambaTF-StarNet --bind_all
 
 from pytorch_lightning.loggers.wandb import WandbLogger
 from pytorch_lightning.strategies.ddp import DDPStrategy

@@ -7,7 +7,7 @@ from packaging.version import parse as V
 from torch_complex.tensor import ComplexTensor
 #from typeguard import check_argument_types
 
-from ..utils.complex_utils import is_complex
+#from ..utils.complex_utils import is_complex
 from ..utils.inversible_interface import InversibleInterface
 from ..utils.nets_utils import make_pad_mask
 is_torch_1_10_plus = V(torch.__version__) >= V("1.10.0")

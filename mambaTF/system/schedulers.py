@@ -1,6 +1,6 @@
 import torch
 from torch.optim.optimizer import Optimizer
-import pytorch_lightning as pl
+#import pytorch_lightning as pl
 
 
 class BaseScheduler(object):
