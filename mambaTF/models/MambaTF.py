@@ -21,8 +21,10 @@ from .base_model import BaseModel
 
 from functools import partial
 from mamba_ssm.modules.mamba_simple import Mamba, Block
+#from mamba_ssm.modules.block import Block #Euler
 from mamba_ssm.models.mixer_seq_simple import _init_weights
-from mamba_ssm.ops.triton.layernorm import RMSNorm
+#from mamba_ssm.ops.triton.layer_norm import RMSNorm #Euler
+from mamba_ssm.ops.triton.layernorm import RMSNorm #-> torch 2.0.0
 
 class MambaBlock(nn.Module):
     def __init__(self, in_channels, n_layer=1, bidirectional=False):
@@ -35,6 +37,7 @@ class MambaBlock(nn.Module):
                     mixer_cls=partial(Mamba, layer_idx=i, d_state=16, d_conv=4, expand=4),
                     norm_cls=partial(RMSNorm, eps=1e-5),
                     fused_add_norm=False,
+                    #mlp_cls=nn.Identity #Euler
                 )
             )
         if bidirectional:
@@ -46,6 +49,7 @@ class MambaBlock(nn.Module):
                         mixer_cls=partial(Mamba, layer_idx=i, d_state=16, d_conv=4, expand=4),
                         norm_cls=partial(RMSNorm, eps=1e-5),
                         fused_add_norm=False,
+                        #mlp_cls=nn.Identity #Euler
                     )
                 )
 
@@ -69,7 +73,6 @@ class MambaBlock(nn.Module):
             residual = torch.cat([residual, back_residual], -1)
         
         return residual
-
 
 class AbsEncoder(torch.nn.Module, ABC):
     @abstractmethod
@@ -101,6 +104,7 @@ class AbsEncoder(torch.nn.Module, ABC):
             chunked: List [(B, frame_size),]
         """
         NotImplementedError
+
 
 class STFTEncoder(AbsEncoder):
     """STFT encoder for speech enhancement and separation"""
@@ -398,7 +402,6 @@ class STFTDecoder(AbsDecoder):
 
         return output[..., start:end]
 
-
 class MambaTF(BaseModel):
     def __init__(
         self,
@@ -488,7 +491,13 @@ class MambaTF(BaseModel):
             #input = input.permute(0, 2, 1).contiguous() #[B, T, M]
         n_samples = input.shape[1] #T
         in_std_ = torch.std(input, dim=(1, 2), keepdim=True)  # [B, 1, 1]
-        input = input / in_std_  # RMS normalization
+
+        if torch.all(in_std_ == 0):
+            # If the standard deviation is zero, don't normalize -> silent audio
+            input = input
+        else:
+            input = input / in_std_  # RMS normalization
+
         ilens = torch.ones(input.shape[0], dtype=torch.long, device=input.device) * n_samples
 
         batch = self.enc(input, ilens)[0]  # [B, T, M, F] -> Stft Enc -> forward(self, input: torch.Tensor, ilens: torch.Tensor = None)

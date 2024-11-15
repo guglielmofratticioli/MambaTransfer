@@ -79,11 +79,28 @@ def make_metadata_files():
 
         print(f"Created {train_json}, {val_json}, and {test_json} for timbre {timbre}")
 
-def normalize_tensor_wav(wav_tensor, eps=1e-8, std=None):
+def standardize_tensor_wav(wav_tensor, eps=1e-8, std=None):
     mean = wav_tensor.float().mean(-1, keepdim=True)
     if std is None:
         std = wav_tensor.float().std(-1, keepdim=True)
     return (wav_tensor - mean) / (std + eps)
+
+def normalizeRMS_tensor_wav(wav_tensor, rms, low_threshold):
+    current_rms = torch.sqrt(torch.mean(wav_tensor ** 2))
+    # Avoid division by zero
+    if current_rms > low_threshold:
+        scaling_factor = rms / current_rms
+        normalized_audio = wav_tensor * scaling_factor
+    else:
+        normalized_audio = wav_tensor.clone()
+    return normalized_audio
+
+def normalize_tensor_wav(wav_tensor, low_threshold):
+    max = torch.max(torch.abs(wav_tensor))
+    if max > low_threshold:
+        return wav_tensor / max
+    else:
+        return wav_tensor
 
 class starNetDataset(Dataset):
     def __init__(
@@ -156,9 +173,23 @@ class starNetDataset(Dataset):
         target = torch.from_numpy(target)
         source = torch.from_numpy(source)
 
+        if np.isnan(source).any() or np.isnan(target).any():
+            print(f"Invalid audio data: NaN values found in source or target for index {self.sources[index]}")
+            return None  # or handle the error as needed
+
+        target = target.to(torch.float32) / 32768.0
+        source = source.to(torch.float32) / 32768.0
+
         src_std = source.float().std(-1, keepdim=True)
-        source = normalize_tensor_wav(source, eps=self.EPS, std=src_std)
-        target = normalize_tensor_wav(target)
+        source = normalize_tensor_wav(source, 0.02)
+        target = normalize_tensor_wav(target, 0.02)
+
+        # Check if tensors are valid (finite values and not empty)
+        if not torch.isfinite(source).all() or not torch.isfinite(target).all():
+            raise ValueError(f"Found NaN or Inf values in the tensors at index {index}: {self.sources[index]}")
+
+        if source.numel() == 0 or target.numel() == 0:
+            raise ValueError(f"Empty tensor detected at index {index}: {self.sources[index]}")
 
         return source, target, self.sources[index].split("/")[-1]
       #  return source, target.unsqueeze(0), self.sources[index].split("/")[-1]

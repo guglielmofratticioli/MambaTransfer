@@ -20,7 +20,8 @@ from pytorch_lightning.callbacks.progress.rich_progress import *
 #from rich.console import Console
 from pytorch_lightning.loggers import TensorBoardLogger
 
-# # # # # # ssh -NfL 6006:localhost:6006 gfraticcioli@10.79.251.109    (Hack)
+# # # # # # ssh -NfL 6006:localhost:6006 gfraticcioli@10.79.23.8  (Hack)
+# # # # # # ssh -NfL 6006:localhost:6006 gfraticcioli@10.79.0.8  (Euler)
 #### Run on SSH shell ->
 # # # # # # tensorboard --logdir=/nas/home/gfraticcioli/projects/MambaTransfer/Experiments/tensorboard_logs/MambaTF-StarNet --bind_all
 
@@ -32,15 +33,20 @@ from mambaTF.utils import MyRichProgressBar, RichProgressBarTheme
 
 import warnings
 
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--conf_dir",
     default="./configs/mambaTF-starNet.yml",
     help="Full path to save best validation model",
 )
-
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+os.environ["TORCH_USE_CUDA_DSA"] = "1"
 
 def main(config):
+
+
     print("Instantiating datamodule <{}>".format(config["datamodule"]["data_name"]))
     datamodule: object = getattr(mambaTF.datas, config["datamodule"]["data_name"])(
         **config["datamodule"]["data_config"]
@@ -146,6 +152,7 @@ def main(config):
 
     trainer = pl.Trainer(
         precision="bf16-mixed",
+        #precision="32-true", #Euler
         max_epochs=config["training"]["epochs"],
         callbacks=callbacks,
         default_root_dir=exp_dir,

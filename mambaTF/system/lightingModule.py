@@ -3,6 +3,8 @@ import torch
 import pytorch_lightning as pl
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from collections.abc import MutableMapping
+
+
 #from speechbrain.processing.speech_augmentation import SpeedPerturb
 
 
@@ -73,6 +75,32 @@ class AudioLightningModule(pl.LightningModule):
         """
         return self.audio_model(wav)
 
+    def log_dataset_statistics(self, dataloader, logger, dataset_name):
+        """Logs basic statistics about a dataset."""
+        data_stds = []
+        sample_count = 0
+
+        for batch in dataloader:
+            sources, targets, _ = batch
+            sample_count += sources.size(0)
+
+            # Calculate mean and std for sources
+            data_stds.append(sources.std().item())
+
+            # Optional: log individual batch statistics to TensorBoard
+            logger.experiment.add_scalar(f"{dataset_name}_batch_std", sources.std(), sample_count)
+
+
+    def setup(self, stage=None):
+        # Log training dataset statistics
+        self.log_dataset_statistics(self.train_loader, self.logger, dataset_name="train")
+
+        # Log validation dataset statistics
+        self.log_dataset_statistics(self.val_loader, self.logger, dataset_name="val")
+
+        # Log test dataset statistics
+        self.log_dataset_statistics(self.test_loader, self.logger, dataset_name="test")
+
     def training_step(self, batch, batch_nb):
         sources, targets, _ = batch
 
@@ -103,6 +131,31 @@ class AudioLightningModule(pl.LightningModule):
         # print(mixtures.shape)
         est_targets= self(sources)
         loss = self.loss_func["train"](est_targets, targets)
+
+        for sample_idx in range(sources.size(0)):
+            input_audio = sources[sample_idx]
+            target_audio = targets[sample_idx]
+            output_audio = est_targets[sample_idx]
+
+            if batch_nb <2:
+                self.logger.experiment.add_audio(
+                    tag=f'{"train"}/input/batch_{batch_nb}/sample_{sample_idx}/channel_0',
+                    snd_tensor=input_audio[:,0],
+                    global_step=self.current_epoch,
+                    sample_rate=44100
+                )
+                self.logger.experiment.add_audio(
+                    tag=f'{"train"}/output/batch_{batch_nb}/sample_{sample_idx}/channel_0',
+                    snd_tensor=output_audio[:, 0],
+                    global_step=self.current_epoch,
+                    sample_rate=44100
+                )
+                self.logger.experiment.add_audio(
+                    tag=f'{"train"}/target/batch_{batch_nb}/sample_{sample_idx}/channel_0',
+                    snd_tensor=target_audio[:, 0],
+                    global_step=self.current_epoch,
+                    sample_rate=44100
+                )
 
         self.log(
             "train_loss",
@@ -152,7 +205,16 @@ class AudioLightningModule(pl.LightningModule):
             self.test_step_outputs.append(tloss)
             return {"test_loss": tloss}
 
+    def on_train_epoch_end(self):
+        #self.log_waveforms(self.train_loader(), split='train')
+        pass
+
+    def on_test_epoch_end(self):
+        #self.log_waveforms(self.test_loader_loader, split='test')
+        pass
+
     def on_validation_epoch_end(self):
+        #self.log_waveforms(self.val_loader, split='val')
         # val
         avg_loss = torch.stack(self.validation_step_outputs).mean()
         val_loss = torch.mean(self.all_gather(avg_loss))
@@ -225,6 +287,8 @@ class AudioLightningModule(pl.LightningModule):
         """Overwrite if you want to save more things in the checkpoint."""
         checkpoint["training_config"] = self.config
         return checkpoint
+
+
 
     @staticmethod
     def config_to_hparams(dic):

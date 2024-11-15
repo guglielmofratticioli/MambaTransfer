@@ -8,9 +8,9 @@ audionet:
     stride: 64
     window: hann
     n_chan: 2
-    n_layers: 3
+    n_layers: 3 #6
     lstm_hidden_units: 256
-    attn_n_head: 4
+    attn_n_head: 4 #4
     attn_approx_qk_dim: 512
     emb_dim: 16
     emb_ks: 8
@@ -64,8 +64,8 @@ datamodule:
     test_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/test
     sample_rate: 44100
     segment: 1
-    source_timbre: 0
-    target_timbre: 1
+    source_timbre: 1
+    target_timbre: 5
     normalize_audio: false
     batch_size: 1
     num_workers: 8
