@@ -511,21 +511,31 @@ class MambaTF(BaseModel):
             batch = self.blocks[ii](batch)  # [B, -1, T, F]
 
         batch = self.deconv(batch)  # [B, 4, T, F]
+        if self.n_chan == 2:
+            # Split batch into left and right channels
+            #batch_left = batch[:, :2, :, :]  # [B, 2, T, F] - Left channel (real and imag)
+            #batch_right = batch[:, 2:, :, :]  # [B, 2, T, F] - Right channel (real and imag)
 
-        # Split batch into left and right channels
-        batch_left = batch[:, :2, :, :]  # [B, 2, T, F] - Left channel (real and imag)
-        batch_right = batch[:, 2:, :, :]  # [B, 2, T, F] - Right channel (real and imag)
+            batch_left = batch[:, 0, :, :]  # [B, 2, T, F] - Left channel (real and imag)
+            batch_right = batch[:, 1, :, :]  # [B, 2, T, F] - Right channel (real and imag)
 
-        batch_left = batch_left.view([n_batch, 1, 2, n_frames, n_freqs])
-        batch_left = new_complex_like(batch0, (batch_left[:, :, 0], batch_left[:, :, 1]))
+            batch_left = batch_left.view([n_batch, 1, 2, n_frames, n_freqs])
+            batch_left = new_complex_like(batch0, (batch_left[:, :, 0], batch_left[:, :, 1]))
 
-        batch_right = batch_right.view([n_batch, 1, 2, n_frames, n_freqs])
-        batch_right = new_complex_like(batch0, (batch_right[:, :, 0], batch_right[:, :, 1]))
+            batch_right = batch_right.view([n_batch, 1, 2, n_frames, n_freqs])
+            batch_right = new_complex_like(batch0, (batch_right[:, :, 0], batch_right[:, :, 1]))
 
-        batch_left = self.dec(batch_left.view(-1, n_frames, n_freqs), ilens)[0]  # [B, 1, -1] -> iSTFT
-        batch_right = self.dec(batch_right.view(-1, n_frames, n_freqs), ilens)[0]  # [B, 1, -1] -> iSTFT
+            batch_left = self.dec(batch_left.view(-1, n_frames, n_freqs), ilens)[0]  # [B, 1, -1] -> iSTFT
+            batch_right = self.dec(batch_right.view(-1, n_frames, n_freqs), ilens)[0]  # [B, 1, -1] -> iSTFT
 
-        batch = torch.stack([batch_left, batch_right], dim=1)  # [B, 2, N_samples]
+            batch = torch.stack([batch_left, batch_right], dim=1)  # [B, 2, N_samples]
+        elif self.n_chan == 1:
+            batch = batch.view([n_batch, 1, 2, n_frames, n_freqs])
+            batch = new_complex_like(batch0, (batch[:, :, 0], batch[:, :, 1]))
+            batch = self.dec(batch.view(-1, n_frames, n_freqs), ilens)[0] # [B, 1, -1] -> iSTFT
+
+        else:
+            raise ValueError(f"{self.n_chan} channels number not supported ")
 
         # Ensure the output has the correct length
         batch = self.pad2(batch, n_samples)  # [B, 2, N_samples]
@@ -535,6 +545,10 @@ class MambaTF(BaseModel):
         # batch = [batch[:, src] for src in range(1)]
         # import pdb; pdb.set_trace()
         batch = batch.permute(0,2,1)
+
+        if self.n_chan == 1:
+            batch = batch[:,:,0]
+
         return batch
 
     '''

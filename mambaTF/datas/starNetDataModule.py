@@ -6,6 +6,7 @@ import numpy as np
 #from typing import Any, Tuple
 import soundfile as sf
 import torch
+import librosa
 #from pytorch_lightning import LightningDataModule
 #from pytorch_lightning.core.sourceins import Hyperparameterssourcein
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
@@ -111,6 +112,7 @@ class starNetDataset(Dataset):
         random_start: bool = True,
         sample_rate: int = 44100,
         #fps: int = 25,
+        num_chan = 1,
         segment: float = 0.72,
         source_timbre: int = 0 ,
         target_timbre: int = 1
@@ -124,10 +126,13 @@ class starNetDataset(Dataset):
         self.json_dir = json_dir
         self.normalize_audio = normalize_audio
         self.audio_only = audio_only
+        self.num_chan = num_chan
         self.source_timbre = source_timbre
         self.target_timbre = target_timbre
         self.random_start = random_start
-        self.seg_len = int(segment * sample_rate)
+        self.segment = segment
+        self.sample_rate = sample_rate
+        self.starNet_rate = 44100
         #self.fps_len = int(segment * fps)
 
 
@@ -153,22 +158,35 @@ class starNetDataset(Dataset):
 
     def __getitem__(self, index: int):
 
-        if sf.info(self.sources[index]).frames == self.seg_len or not self.random_start:
+        seg_len = self.segment*self.starNet_rate
+        if sf.info(self.sources[index]).frames == seg_len or not self.random_start:
             rand_start = 0
         else:
-            rand_start = np.random.randint(0, sf.info(self.sources[index]).frames - self.seg_len)
+            rand_start = np.random.randint(0, sf.info(self.sources[index]).frames - seg_len)
 
         if not self.random_start:
             stop = None
         else:
-            stop = rand_start + self.seg_len
+            stop = rand_start + seg_len
 
-        source, sample_rate = sf.read(
+        source, sr = sf.read(
             self.sources[index], start=rand_start, stop=stop, dtype="int16"
         )
-        target, sample_rate = sf.read(
+        target, sr = sf.read(
             self.targets[index], start=rand_start, stop=stop, dtype="int16"
         )
+
+        # resample to desired sample rate
+        source = source.astype(np.float32) / 32768.0
+        target = target.astype(np.float32) / 32768.0
+
+        # mono audio conversion
+        if self.num_chan == 1:
+            target = (target[:,0]+ target[:,1]) / 2
+            source = (source[:, 0] + source[:, 1]) / 2
+
+        source = librosa.resample(y=source, target_sr=self.sample_rate, orig_sr=sr)
+        target = librosa.resample(y=target, target_sr=self.sample_rate, orig_sr=sr)
 
         target = torch.from_numpy(target)
         source = torch.from_numpy(source)
@@ -176,9 +194,6 @@ class starNetDataset(Dataset):
         if np.isnan(source).any() or np.isnan(target).any():
             print(f"Invalid audio data: NaN values found in source or target for index {self.sources[index]}")
             return None  # or handle the error as needed
-
-        target = target.to(torch.float32) / 32768.0
-        source = source.to(torch.float32) / 32768.0
 
         src_std = source.float().std(-1, keepdim=True)
         source = normalize_tensor_wav(source, 0.02)
@@ -233,6 +248,7 @@ class starNetDataModule(object):
         #fps: int = 25,
         segment: float = 0.72,
         normalize_audio: bool = False,
+        num_chan: int = 1,
         batch_size: int = 1,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -254,8 +270,9 @@ class starNetDataModule(object):
         #self.fps = fps
         self.segment = segment
         self.normalize_audio = normalize_audio
-        self.batch_size = batch_size
+        self.num_chan = num_chan
 
+        self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.persistent_workers = persistent_workers
@@ -275,6 +292,7 @@ class starNetDataModule(object):
             #fps=self.fps,
             segment=self.segment,
             normalize_audio=self.normalize_audio,
+            num_chan=self.num_chan,
             audio_only=self.audio_only,
             source_timbre=self.source_timbre,
             target_timbre=self.target_timbre
@@ -285,6 +303,7 @@ class starNetDataModule(object):
             #fps=self.fps,
             segment=self.segment,
             normalize_audio=self.normalize_audio,
+            num_chan=self.num_chan,
             audio_only=self.audio_only,
             source_timbre=self.source_timbre,
             target_timbre=self.target_timbre
@@ -295,6 +314,7 @@ class starNetDataModule(object):
             #fps=self.fps,
             segment=self.segment,
             normalize_audio=self.normalize_audio,
+            num_chan=self.num_chan,
             audio_only=self.audio_only,
             source_timbre=self.source_timbre,
             target_timbre=self.target_timbre
@@ -341,5 +361,5 @@ class starNetDataModule(object):
     def make_sets(self):
         return self.data_train, self.data_val, self.data_test
 
-if __name__ == '__main__':
-    make_metadata_files()
+#if __name__ == '__main__':
+   #make_metadata_files()

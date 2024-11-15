@@ -7,7 +7,7 @@ audionet:
     n_fft: 256
     stride: 64
     window: hann
-    n_chan: 2
+    n_chan: 1
     n_layers: 3 #6
     lstm_hidden_units: 256
     attn_n_head: 4 #4
@@ -62,10 +62,11 @@ datamodule:
     train_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/train
     valid_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/val
     test_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/test
-    sample_rate: 44100
+    num_chan: 1
+    sample_rate: 16000
     segment: 1
     source_timbre: 1
-    target_timbre: 5
+    target_timbre: 4
     normalize_audio: false
     batch_size: 1
     num_workers: 8
