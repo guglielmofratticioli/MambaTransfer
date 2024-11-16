@@ -1,6 +1,7 @@
 import os
 import sys
 import torch
+from huggingface_hub import resume_inference_endpoint
 from torch import Tensor
 import argparse
 import json
@@ -151,7 +152,7 @@ def main(config):
     #)
 
     trainer = pl.Trainer(
-        precision="bf16-mixed",
+        precision="32",
         #precision="32-true", #Euler
         max_epochs=config["training"]["epochs"],
         callbacks=callbacks,

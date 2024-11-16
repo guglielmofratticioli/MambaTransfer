@@ -167,7 +167,7 @@ class starNetDataset(Dataset):
         if not self.random_start:
             stop = None
         else:
-            stop = rand_start + seg_len
+            stop = rand_start + int(seg_len)
 
         source, sr = sf.read(
             self.sources[index], start=rand_start, stop=stop, dtype="int16"

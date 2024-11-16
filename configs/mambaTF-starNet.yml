@@ -52,7 +52,7 @@ optimizer:
 scheduler:
   sche_name: ReduceLROnPlateau
   sche_config:
-    patience: 10
+    patience: 20
     factor: 0.5
 
 # Data config
@@ -63,8 +63,8 @@ datamodule:
     valid_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/val
     test_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/test
     num_chan: 1
-    sample_rate: 16000
-    segment: 1
+    sample_rate: 8000
+    segment: 3
     source_timbre: 1
     target_timbre: 4
     normalize_audio: false

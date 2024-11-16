@@ -428,6 +428,8 @@ class MambaTF(BaseModel):
         assert n_fft % 2 == 0
         n_freqs = n_fft // 2 + 1
 
+        self.eps = eps
+
         self.enc = STFTEncoder(
             n_fft, n_fft, stride, window=window, use_builtin_complex=use_builtin_complex
         )
@@ -492,11 +494,8 @@ class MambaTF(BaseModel):
         n_samples = input.shape[1] #T
         in_std_ = torch.std(input, dim=(1, 2), keepdim=True)  # [B, 1, 1]
 
-        if torch.all(in_std_ == 0):
-            # If the standard deviation is zero, don't normalize -> silent audio
-            input = input
-        else:
-            input = input / in_std_  # RMS normalization
+ #       if torch.all(in_std_ > self.eps):
+#            input =  input /in_std_[0] # RMS normalization
 
         ilens = torch.ones(input.shape[0], dtype=torch.long, device=input.device) * n_samples
 
@@ -539,15 +538,18 @@ class MambaTF(BaseModel):
 
         # Ensure the output has the correct length
         batch = self.pad2(batch, n_samples)  # [B, 2, N_samples]
-        # Reverse the RMS normalization
-        batch = batch * in_std_  # Shape of in_std_: [B, 1, 1]
 
-        # batch = [batch[:, src] for src in range(1)]
-        # import pdb; pdb.set_trace()
-        batch = batch.permute(0,2,1)
+ #       if torch.all(in_std_ > self.eps):
+  #          batch =  in_std_[0] * batch # Reverse RMS Normalization, Shape of in_std_: [B, 1, 1]
+        #    # batch = [batch[:, src] for src in range(1)]
+        #    # import pdb; pdb.set_trace()
 
-        if self.n_chan == 1:
-            batch = batch[:,:,0]
+        if self.n_chan == 2:
+            batch = batch.permute(0, 2, 1)
+
+        #if self.n_chan == 1:
+        #    batch = batch[:,:,0]
+
 
         return batch
 

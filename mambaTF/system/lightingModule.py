@@ -140,21 +140,21 @@ class AudioLightningModule(pl.LightningModule):
             if batch_nb <2:
                 self.logger.experiment.add_audio(
                     tag=f'{"train"}/input/batch_{batch_nb}/sample_{sample_idx}/channel_0',
-                    snd_tensor=input_audio[:,0],
+                    snd_tensor=input_audio[:],
                     global_step=self.current_epoch,
-                    sample_rate=44100
+                    sample_rate=16000
                 )
                 self.logger.experiment.add_audio(
                     tag=f'{"train"}/output/batch_{batch_nb}/sample_{sample_idx}/channel_0',
-                    snd_tensor=output_audio[:, 0],
+                    snd_tensor=output_audio[:],
                     global_step=self.current_epoch,
-                    sample_rate=44100
+                    sample_rate=16000
                 )
                 self.logger.experiment.add_audio(
                     tag=f'{"train"}/target/batch_{batch_nb}/sample_{sample_idx}/channel_0',
-                    snd_tensor=target_audio[:, 0],
+                    snd_tensor=target_audio[:],
                     global_step=self.current_epoch,
-                    sample_rate=44100
+                    sample_rate=16000
                 )
 
         self.log(
