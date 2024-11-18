@@ -131,9 +131,9 @@ def main(config):
     )
     callbacks.append(checkpoint)
 
-    if config["training"]["early_stop"]:
-        print("Instantiating EarlyStopping")
-        callbacks.append(EarlyStopping(**config["training"]["early_stop"]))
+    #if config["training"]["early_stop"]:
+    #    print("Instantiating EarlyStopping")
+    #    callbacks.append(EarlyStopping(**config["training"]["early_stop"]))
     callbacks.append(MyRichProgressBar(theme=RichProgressBarTheme()))
 
     # Don't ask GPU if they are not available.

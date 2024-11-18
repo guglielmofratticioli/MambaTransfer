@@ -18,5 +18,5 @@ class MAELoss(_Loss):
     def forward(self, ests, targets):
         if ests.size() != targets.size():
             raise TypeError(f'Inputs must be of the same shape, got {ests.size()} and {targets.size()}')
-        loss = self.l1_loss(ests+self.eps, targets+self.eps)
+        loss = self.l1_loss(ests, targets)
         return loss

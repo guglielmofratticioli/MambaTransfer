@@ -20,21 +20,26 @@ audionet:
     use_builtin_complex: False
 
 # Loss config
+  #  loss_func: MelSpectrogramLoss
+  #  config:
+  #    stereo: False
+  #    sample_rate: 8000
 loss:
   train:
     loss_func: MAELoss
     config:
-
   val:
     loss_func: MAELoss
     config:
+
+
 
 
 training:
   system: AudioLightningModule
   gpus: [0]
   parallel: ddp
-  epochs: 500
+  epochs: 200
   early_stop:
     monitor: val_loss/dataloader_idx_0
     mode: min
@@ -45,7 +50,7 @@ training:
 # Optim config
 optimizer:
   optim_name: adam
-  lr: 0.001
+  lr: 0.000001
   weight_decay: 0
 
 # Sche config
