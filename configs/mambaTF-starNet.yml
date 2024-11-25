@@ -26,12 +26,13 @@ audionet:
   #    sample_rate: 8000
 loss:
   train:
-    loss_func: MAELoss
+    loss_func: MelSpectrogramLoss
     config:
+      sample_rate: 16000
   val:
-    loss_func: MAELoss
+    loss_func: MelSpectrogramLoss
     config:
-
+      sample_rate: 16000
 
 
 
@@ -39,7 +40,7 @@ training:
   system: AudioLightningModule
   gpus: [0]
   parallel: ddp
-  epochs: 200
+  epochs: 300
   early_stop:
     monitor: val_loss/dataloader_idx_0
     mode: min
@@ -50,14 +51,14 @@ training:
 # Optim config
 optimizer:
   optim_name: adam
-  lr: 0.000001
+  lr: 0.0001
   weight_decay: 0
 
 # Sche config
 scheduler:
   sche_name: ReduceLROnPlateau
   sche_config:
-    patience: 20
+    patience: 10
     factor: 0.5
 
 # Data config
@@ -68,8 +69,8 @@ datamodule:
     valid_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/val
     test_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/test
     num_chan: 1
-    sample_rate: 8000
-    segment: 3
+    sample_rate: 16000
+    segment: 2
     source_timbre: 1
     target_timbre: 4
     normalize_audio: false

@@ -420,7 +420,7 @@ class MambaTF(BaseModel):
         activation="prelu",
         eps=1.0e-5,
         use_builtin_complex=False,
-        sample_rate=16000
+        sample_rate=8000
     ):
         super().__init__(sample_rate=sample_rate)
         self.n_layers = n_layers
@@ -490,12 +490,12 @@ class MambaTF(BaseModel):
             input = input.unsqueeze(2)
         elif input.ndim == 3:
             pass
-            #input = input.permute(0, 2, 1).contiguous() #[B, T, M]
-        n_samples = input.shape[1] #T
-        in_std_ = torch.std(input, dim=(1, 2), keepdim=True)  # [B, 1, 1]
 
- #       if torch.all(in_std_ > self.eps):
-#            input =  input /in_std_[0] # RMS normalization
+        n_samples = input.shape[1] #T
+
+        #in_std_ = torch.std(input, dim=(1, 2), keepdim=True)  # [B, 1, 1]
+        #if torch.all(in_std_ > self.eps):
+        #    input =  input /in_std_[0] # RMS normalization
 
         ilens = torch.ones(input.shape[0], dtype=torch.long, device=input.device) * n_samples
 
@@ -511,10 +511,6 @@ class MambaTF(BaseModel):
 
         batch = self.deconv(batch)  # [B, 4, T, F]
         if self.n_chan == 2:
-            # Split batch into left and right channels
-            #batch_left = batch[:, :2, :, :]  # [B, 2, T, F] - Left channel (real and imag)
-            #batch_right = batch[:, 2:, :, :]  # [B, 2, T, F] - Right channel (real and imag)
-
             batch_left = batch[:, 0, :, :]  # [B, 2, T, F] - Left channel (real and imag)
             batch_right = batch[:, 1, :, :]  # [B, 2, T, F] - Right channel (real and imag)
 
@@ -529,27 +525,31 @@ class MambaTF(BaseModel):
 
             batch = torch.stack([batch_left, batch_right], dim=1)  # [B, 2, N_samples]
         elif self.n_chan == 1:
-            batch = batch.view([n_batch, 1, 2, n_frames, n_freqs])
-            batch = new_complex_like(batch0, (batch[:, :, 0], batch[:, :, 1]))
-            batch = self.dec(batch.view(-1, n_frames, n_freqs), ilens)[0] # [B, 1, -1] -> iSTFT
+            #batch = batch.view([n_batch, 1, 2, n_frames, n_freqs])
+            #batch = new_complex_like(batch0, (batch[:, :, 0], batch[:, :, 1]))
+            real = batch[:,0,:,:]  # (1,T,F)
+            imag = batch[:,1,:,:]  # (1,T,F)
+            batch = torch.complex(real, imag) # (B, T, F)
+            batch  = batch.unsqueeze(2) #(B, T, 1, F)
+            batch = self.dec(batch, ilens)[0] # [B, seg_len*sr,1]
+            batch = batch[:,:,0] #[B, seg_lent*sr
 
         else:
             raise ValueError(f"{self.n_chan} channels number not supported ")
 
         # Ensure the output has the correct length
-        batch = self.pad2(batch, n_samples)  # [B, 2, N_samples]
+        # batch = self.pad2(batch, n_samples)  # [B, 2, N_samples]
 
- #       if torch.all(in_std_ > self.eps):
-  #          batch =  in_std_[0] * batch # Reverse RMS Normalization, Shape of in_std_: [B, 1, 1]
-        #    # batch = [batch[:, src] for src in range(1)]
-        #    # import pdb; pdb.set_trace()
+        #if torch.all(in_std_ > self.eps):
+        #    batch =  in_std_[0] * batch # Reverse RMS Normalization, Shape of in_std_: [B, 1, 1]
 
         if self.n_chan == 2:
             batch = batch.permute(0, 2, 1)
 
-        #if self.n_chan == 1:
-        #    batch = batch[:,:,0]
+        input_rms = torch.sqrt(torch.mean(input[:,:,0] ** 2, dim=1, keepdim=True))
+        batch_rms = torch.sqrt(torch.mean(batch ** 2, dim=1, keepdim=True)) # Shape: (B, 1)
 
+        batch = input_rms/batch_rms * batch
 
         return batch
 

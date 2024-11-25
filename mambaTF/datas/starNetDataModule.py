@@ -199,6 +199,10 @@ class starNetDataset(Dataset):
         source = normalize_tensor_wav(source, 0.02)
         target = normalize_tensor_wav(target, 0.02)
 
+        # Prevent Clipping on RMS normalization
+        source = .7*source
+        target = .7*target
+
         # Check if tensors are valid (finite values and not empty)
         if not torch.isfinite(source).all() or not torch.isfinite(target).all():
             raise ValueError(f"Found NaN or Inf values in the tensors at index {index}: {self.sources[index]}")

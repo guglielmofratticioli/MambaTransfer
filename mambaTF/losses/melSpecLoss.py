@@ -9,7 +9,7 @@ class MelSpectrogramLoss(_Loss):
     Computes the L1 loss between the Mel-spectrograms of the estimated and target signals.
     """
 
-    def __init__(self, sample_rate=8000, n_fft=1024, hop_length=256, n_mels=80, reduction='mean', eps=1e-10, stereo=False):
+    def __init__(self, sample_rate=8000, n_fft=1024, hop_length=320, n_mels=1280, reduction='mean', eps=1e-10, stereo=False):
         super().__init__(reduction=reduction)
         self.sample_rate = sample_rate
         self.n_fft = n_fft

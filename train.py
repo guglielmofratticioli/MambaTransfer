@@ -114,6 +114,7 @@ def main(config):
         test_loader=test_loader,
         scheduler=scheduler,
         config=config,
+        sr = config["datamodule"]["data_config"]["sample_rate"],
     )
 
     # Define callbacks
