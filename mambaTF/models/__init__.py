@@ -1,8 +1,10 @@
 
 from .MambaTF import MambaTF
+from .JustMambaTF import JustMambaTF
 
 __all__ = [
    "MambaTF",
+    "JustMambaTF"
 ]
 
 

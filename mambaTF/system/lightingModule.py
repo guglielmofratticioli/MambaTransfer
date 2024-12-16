@@ -43,7 +43,7 @@ class AudioLightningModule(pl.LightningModule):
             test_loader=None,
             scheduler=None,
             config=None,
-            sr=8000,
+            sr=44100,
     ):
         super().__init__()
         self.audio_model = audio_model
@@ -75,6 +75,7 @@ class AudioLightningModule(pl.LightningModule):
         Returns:
             :class:`torch.Tensor`
         """
+
         return self.audio_model(wav)
 
     def log_dataset_statistics(self, dataloader, logger, dataset_name):
@@ -87,10 +88,10 @@ class AudioLightningModule(pl.LightningModule):
             sample_count += sources.size(0)
 
             # Calculate mean and std for sources
-            #data_stds.append(sources.std().item())
+            data_stds.append(sources.std().item())
 
             # Optional: log individual batch statistics to TensorBoard
-            # logger.experiment.add_scalar(f"{dataset_name}_batch_std", sources.std(), sample_count)
+            logger.experiment.add_scalar(f"{dataset_name}_batch_std", sources.std(), sample_count)
 
 
     def setup(self, stage=None):
@@ -134,39 +135,19 @@ class AudioLightningModule(pl.LightningModule):
         est_targets= self(sources)
         loss = self.loss_func["train"](est_targets, targets)
 
-        for sample_idx in range(sources.size(0)):
-            input_audio = sources[sample_idx]
-            target_audio = targets[sample_idx]
-            output_audio = est_targets[sample_idx]
+        self.log(
+            "train_loss",
+            loss,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+            logger=True,
+        )
 
-            #if batch_nb <2:
-            #    self.logger.experiment.add_audio(
-            #        tag=f'{"train"}/input/batch_{batch_nb}/sample_{sample_idx}/channel_0',
-            #        snd_tensor=input_audio[:],
-            #        global_step=self.current_epoch,
-            #        sample_rate=self.sr
-            #    )
-            #    self.logger.experiment.add_audio(
-            #        tag=f'{"train"}/output/batch_{batch_nb}/sample_{sample_idx}/channel_0',
-            #        snd_tensor=output_audio[:],
-            #        global_step=self.current_epoch,
-            #        sample_rate=self.sr
-            #    )
-            #    self.logger.experiment.add_audio(
-            #        tag=f'{"train"}/target/batch_{batch_nb}/sample_{sample_idx}/channel_0',
-            #        snd_tensor=target_audio[:],
-            #        global_step=self.current_epoch,
-            #        sample_rate=self.sr
-            #    )
-
-       #self.log(
-       #    "train_loss",
-       #    loss,
-       #    on_epoch=True,
-       #    prog_bar=True,
-       #    sync_dist=True,
-       #    logger=True,
-       #)
+        # Log gradients
+        for name, param in self.audio_model.named_parameters():
+            if param.grad is not None:
+                self.logger.experiment.add_histogram(f"gradients/{name}", param.grad, self.current_epoch)
 
         return {"loss": loss}
 
@@ -177,16 +158,41 @@ class AudioLightningModule(pl.LightningModule):
             # print(mixtures.shape)
             est_targets = self(sources)
             loss = self.loss_func["val"](est_targets, targets)
-            #self.log(
-            #    "val_loss",
-            #    loss,
-            #    on_epoch=True,
-            #    prog_bar=True,
-            #    sync_dist=True,
-            #    logger=True,
-            #)
+            self.log(
+                "val_loss",
+                loss,
+                on_epoch=True,
+                prog_bar=True,
+                sync_dist=True,
+                logger=True,
+            )
 
             self.validation_step_outputs.append(loss)
+
+            for sample_idx in range(sources.size(0)):
+                input_audio = sources[sample_idx]
+                target_audio = targets[sample_idx]
+                output_audio = est_targets[sample_idx]
+
+                if batch_nb < 2:
+                    self.logger.experiment.add_audio(
+                        tag=f'{"val"}/input/batch_{batch_nb}/sample_{sample_idx}/channel_0',
+                        snd_tensor=input_audio[:],
+                        global_step=self.current_epoch,
+                        sample_rate=self.sr
+                    )
+                    self.logger.experiment.add_audio(
+                        tag=f'{"val"}/output/batch_{batch_nb}/sample_{sample_idx}/channel_0',
+                        snd_tensor=output_audio[:],
+                        global_step=self.current_epoch,
+                        sample_rate=self.sr
+                    )
+                    self.logger.experiment.add_audio(
+                        tag=f'{"val"}/target/batch_{batch_nb}/sample_{sample_idx}/channel_0',
+                        snd_tensor=target_audio[:],
+                        global_step=self.current_epoch,
+                        sample_rate=self.sr
+                    )
 
             return {"val_loss": loss}
 
@@ -209,6 +215,8 @@ class AudioLightningModule(pl.LightningModule):
 
     def on_train_epoch_end(self):
         #self.log_waveforms(self.train_loader(), split='train')
+
+
         pass
 
     def on_test_epoch_end(self):

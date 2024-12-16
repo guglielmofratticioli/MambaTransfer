@@ -420,7 +420,7 @@ class MambaTF(BaseModel):
         activation="prelu",
         eps=1.0e-5,
         use_builtin_complex=False,
-        sample_rate=8000
+        sample_rate = 32000
     ):
         super().__init__(sample_rate=sample_rate)
         self.n_layers = n_layers

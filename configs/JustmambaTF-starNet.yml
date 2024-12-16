@@ -1,40 +1,29 @@
 exp:
-  exp_name: Mamba_Mel
+  exp_name: JustMamba_Mel_MAE_STFT
 
 
 # Network config
 audionet:
-  audionet_name: MambaTF
+  audionet_name: JustMambaTF
   audionet_config:
-    input_dim: 64
-    n_fft: 256
-    stride: 64
-    window: hann
     n_chan: 1
-    n_layers: 3 #6
-    lstm_hidden_units: 256
-    attn_n_head: 4 #4
-    attn_approx_qk_dim: 512
-    emb_dim: 4 #16
-    emb_ks: 10 #8
-    emb_hs: 1
-    activation: prelu
+    n_layers: 8 #6
+    emb_dim: 1 #16
+    emb_ks: 64 #8
     eps: 1.0e-5
-    use_builtin_complex: False
-
+    sample_rate: 32000
 # Loss config
   #  loss_func: MelSpectrogramLoss
   #  config:
   #    stereo: False
   #    sample_rate: 8000
-
 loss:
   train:
-    loss_func: MelSpectrogramLoss
+    loss_func: MelMAESpectrogramLoss
     config:
       sample_rate: 32000
   val:
-    loss_func: MelSpectrogramLoss
+    loss_func: MelMAESpectrogramLoss
     config:
       sample_rate: 32000
 
@@ -44,28 +33,32 @@ training:
   system: AudioLightningModule
   gpus: [0]
   parallel: ddp
-  epochs: 300
-  early_stop: False
-  #early_stop:
-  #  monitor: val_loss/dataloader_idx_0
-  #  mode: min
-  #  patience: 20
-  #  verbose: true
+  epochs: 1000
+  early_stop:
+    monitor: val_loss/dataloader_idx_0
+    mode: min
+    patience: 500
+    verbose: true
   SpeedAug: False
 
 # Optim config
 optimizer:
   optim_name: adam
-  lr: 0.001
+  lr: 0.000001
   weight_decay: 0
 
 # Sche config
 scheduler:
   sche_name: ReduceLROnPlateau
   sche_config:
-    patience: 10
-    factor: 0.5
+    patience: 200
+    factor: 0.8
 
+# TIMBRES
+# 4 Strings
+# 1 Clarinet
+# 2 Vibraphone
+# 3-4 Piano
 # Data config
 datamodule:
   data_name: starNetDataModule

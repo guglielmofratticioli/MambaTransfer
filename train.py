@@ -39,15 +39,13 @@ import warnings
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--conf_dir",
-    default="./configs/mambaTF-starNet.yml",
+    default="./configs/JustmambaTF-starNet.yml",
     help="Full path to save best validation model",
 )
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 os.environ["TORCH_USE_CUDA_DSA"] = "1"
 
 def main(config):
-
-
     print("Instantiating datamodule <{}>".format(config["datamodule"]["data_name"]))
     datamodule: object = getattr(mambaTF.datas, config["datamodule"]["data_name"])(
         **config["datamodule"]["data_config"]
@@ -59,7 +57,6 @@ def main(config):
     # Define model and optimizer
     print("Instantiating AudioNet <{}>".format(config["audionet"]["audionet_name"]))
     model = getattr(mambaTF.models, config["audionet"]["audionet_name"])(
-        sample_rate=config["datamodule"]["data_config"]["sample_rate"],
         **config["audionet"]["audionet_config"],
     )
     # import pdb; pdb.set_trace()
@@ -97,10 +94,10 @@ def main(config):
     )
     loss_func = {
         "train": getattr(mambaTF.losses, config["loss"]["train"]["loss_func"])(
-            #**config["loss"]["train"]["config"],
+            **config["loss"]["train"]["config"],
         ),
         "val": getattr(mambaTF.losses, config["loss"]["val"]["loss_func"])(
-            #**config["loss"]["val"]["config"],
+            **config["loss"]["val"]["config"],
         ),
     }
 
@@ -132,9 +129,9 @@ def main(config):
     )
     callbacks.append(checkpoint)
 
-    #if config["training"]["early_stop"]:
-    #    print("Instantiating EarlyStopping")
-    #    callbacks.append(EarlyStopping(**config["training"]["early_stop"]))
+    if config["training"]["early_stop"]:
+        print("Instantiating EarlyStopping")
+        callbacks.append(EarlyStopping(**config["training"]["early_stop"]))
     callbacks.append(MyRichProgressBar(theme=RichProgressBarTheme()))
 
     # Don't ask GPU if they are not available.
