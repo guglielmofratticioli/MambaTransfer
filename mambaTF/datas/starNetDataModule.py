@@ -133,54 +133,35 @@ class starNetDataset(Dataset):
         self.segment = segment
         self.sample_rate = sample_rate
         self.starNet_rate = 44100
+        self.piano_infos = []
+        self.strings_infos = []
         #self.fps_len = int(segment * fps)
 
-        if source_timbre == 3 or target_timbre == 3:
-            piano = []
-            vibes = []
-            with open(os.path.join(json_dir,"3.json"), "r") as f:
-                piano_infos = json.load(f)
+        source_json = os.path.join(json_dir, str(source_timbre)+".json")
+        target_json = os.path.join(json_dir, str(target_timbre)+".json")
+        strings_json = os.path.join(json_dir,"4.json")
 
-            with open(os.path.join(json_dir,"4.json"), "r") as f:
-                strings_infos = json.load(f)
+        with open(source_json, "r") as f:
+            source_infos = json.load(f)
 
-            with open(os.path.join(json_dir,"2.json"), "r") as f:
-                vibes_infos = json.load(f)
+        with open(target_json, "r") as f:
+            target_infos = json.load(f)
 
-            if(len(piano_infos) != len(strings_infos)):
-                print("ERROR Piano and Strings Different list lengths")
-            if (len(piano_infos) != len(vibes_infos)):
-                print("ERROR Piano and Vibes Different list lengths")
+        with open(strings_json, "r") as f:
+            strings_infos = json.load(f)
+    
+        self.sources = []
+        self.targets = []
+        self.strings = []
 
-            for i in range(len(piano_infos)):
-                piano.append(piano_infos[i]-strings_infos[i])
-                vibes.append(vibes_infos[i])
+        if (len(source_infos) != len(target_infos) != len(strings_infos)):
+            print("ERROR LENGHT LISTS (source, target, strings)"+len(source_infos)+" "+len(target_infos)+" "+len(strings_infos))
 
-            if source_timbre == 3:
-                self.sources = piano
-                self.targets = vibes
-
-            if target_timbre == 3:
-                self.sources = vibes
-                self.targets = piano
-
-        else:
-            source_json = os.path.join(json_dir, str(source_timbre)+".json")
-            target_json = os.path.join(json_dir, str(target_timbre)+".json")
-
-            with open(source_json, "r") as f:
-                source_infos = json.load(f)
-
-            with open(target_json, "r") as f:
-                target_infos = json.load(f)
-
-            self.sources = []
-            self.targets = []
-            for i in range(len(source_infos)):
-                self.sources.append(source_infos[i])
-                self.targets.append(target_infos[i])
-
-                self.length = len(self.sources)
+        for i in range(len(source_infos)):
+            self.sources.append(source_infos[i])
+            self.targets.append(target_infos[i])
+            self.strings.append(strings_infos[i])
+            self.length = len(self.sources)
 
     def __len__(self):
         return self.length
@@ -191,7 +172,7 @@ class starNetDataset(Dataset):
         if sf.info(self.sources[index]).frames == seg_len or not self.random_start:
             rand_start = 0
         else:
-            rand_start = np.random.randint(0, sf.info(self.sources[index]).frames - 2*seg_len)
+            rand_start = np.random.randint(2*seg_len, sf.info(self.sources[index]).frames - 2*seg_len)
 
         if not self.random_start:
             stop = None
@@ -205,6 +186,17 @@ class starNetDataset(Dataset):
             self.targets[index], start=rand_start, stop=stop, dtype="int16"
         )
 
+        if self.source_timbre == 3: 
+            strings, sr = sf.read(
+                self.strings[index], start=rand_start, stop=stop, dtype="int16"
+            )
+            source = source - strings
+        elif self.target_timbre == 3: 
+            strings, sr = sf.read(
+                self.strings[index], start=rand_start, stop=stop, dtype="int16"
+            )
+            target = target - strings
+    
         # resample to desired sample rate
         source = source.astype(np.float32) / 32768.0
         target = target.astype(np.float32) / 32768.0

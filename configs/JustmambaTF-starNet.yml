@@ -54,11 +54,6 @@ scheduler:
     patience: 200
     factor: 0.8
 
-# TIMBRES
-# 4 Strings
-# 1 Clarinet
-# 2 Vibraphone
-# 3-4 Piano
 # Data config
 datamodule:
   data_name: starNetDataModule

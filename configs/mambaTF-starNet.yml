@@ -76,8 +76,8 @@ datamodule:
     num_chan: 1
     sample_rate: 32000
     segment: 2
-    source_timbre: 2
-    target_timbre: 3
+    source_timbre: 1
+    target_timbre: 4
     normalize_audio: false
     batch_size: 1
     num_workers: 8
