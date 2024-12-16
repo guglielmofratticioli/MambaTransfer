@@ -1,5 +1,5 @@
 exp:
-  exp_name: JustMamba_Mel_MAE_STFT
+  exp_name: JustMamba_LOGMEL
 
 
 # Network config
