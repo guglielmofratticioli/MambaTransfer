@@ -123,11 +123,11 @@ def main(config):
         filename="{epoch}",
         monitor="val_loss/dataloader_idx_0",
         mode="min",
-        save_top_k=5,
+        save_top_k=1,
         verbose=True,
         save_last=True,
     )
-    callbacks.append(checkpoint)
+    #callbacks.append(checkpoint)
 
     if config["training"]["early_stop"]:
         print("Instantiating EarlyStopping")

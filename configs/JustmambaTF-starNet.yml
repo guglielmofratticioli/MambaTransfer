@@ -1,5 +1,5 @@
 exp:
-  exp_name: JustMamba_LOGMEL
+  exp_name: JustMamba_BATCH8
 
 
 # Network config
@@ -7,11 +7,11 @@ audionet:
   audionet_name: JustMambaTF
   audionet_config:
     n_chan: 1
-    n_layers: 8 #6
-    emb_dim: 1 #16
-    emb_ks: 64 #8
+    n_layers: 2 #6
+    dim: 4000 #16
+    bidirectional: False
     eps: 1.0e-5
-    sample_rate: 32000
+    sample_rate: 16000
 # Loss config
   #  loss_func: MelSpectrogramLoss
   #  config:
@@ -21,11 +21,15 @@ loss:
   train:
     loss_func: MelMAESpectrogramLoss
     config:
-      sample_rate: 32000
+      sample_rate: 16000
+      n_mels: 600
+      n_fft: 8192
   val:
     loss_func: MelMAESpectrogramLoss
     config:
-      sample_rate: 32000
+      sample_rate: 16000
+      n_mels: 600
+      n_fft: 8192
 
 
 
@@ -33,7 +37,7 @@ training:
   system: AudioLightningModule
   gpus: [0]
   parallel: ddp
-  epochs: 1000
+  epochs: 2000
   early_stop:
     monitor: val_loss/dataloader_idx_0
     mode: min
@@ -44,7 +48,7 @@ training:
 # Optim config
 optimizer:
   optim_name: adam
-  lr: 0.000001
+  lr: 0.00001
   weight_decay: 0
 
 # Sche config
@@ -62,8 +66,8 @@ datamodule:
     valid_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/val
     test_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/test
     num_chan: 1
-    sample_rate: 32000
-    segment: 2
+    sample_rate: 16000
+    segment: 1
     source_timbre: 2
     target_timbre: 3
     normalize_audio: false

@@ -144,7 +144,7 @@ class AudioLightningModule(pl.LightningModule):
             logger=True,
         )
 
-        # Log gradients
+        ## Log gradients
         #for name, param in self.audio_model.named_parameters():
         #    if param.grad is not None:
         #        self.logger.experiment.add_histogram(f"gradients/{name}", param.grad, self.current_epoch)

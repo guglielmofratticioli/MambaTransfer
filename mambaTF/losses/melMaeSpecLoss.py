@@ -15,7 +15,7 @@ class MelMAESpectrogramLoss(_Loss):
     Computes the L1 loss between the Mel-spectrograms of the estimated and target signals.
     """
 
-    def __init__(self,k_mel=1, k_mae=0, k_stft=0, sample_rate=8000, n_fft=1024, hop_length=320, n_mels=1280, reduction='mean', eps=1e-10, stereo=False):
+    def __init__(self,k_mel=1, k_mae=0, k_stft=0, sample_rate=8000, n_fft=1024, hop_length=320, n_mels=1280, normalized = True,reduction='mean', eps=1e-10, stereo=False):
         super().__init__(reduction=reduction)
         self.k_mel = k_mel
         self.k_mae = k_mae
@@ -61,19 +61,23 @@ class MelMAESpectrogramLoss(_Loss):
 
             return self.alpha*(lossL+lossR)/2 + (1-self.alpha)*MAEloss
         else:
-            ests = ests.unsqueeze(1)   # [batch, 1, time]
-            targets = targets.unsqueeze(1)  # [batch, 1, time]
+            if ests.dim() == 2:
+                ests = ests.unsqueeze(1)   # [batch, 1, time]
+                targets = targets.unsqueeze(1)  # [batch, 1, time]
+            
+            ests = self.peak_normalize(ests)
+            targets = self.peak_normalize(targets)
 
             est_mel = self.mel_spectrogram(ests)
             target_mel = self.mel_spectrogram(targets)
 
-            lest_mel =  torch.log1p(est_mel)
-            ltrg_mel =  torch.log1p(target_mel)
-            lest_mel = self.peak_normalize(lest_mel)
-            ltrg_mel = self.peak_normalize(ltrg_mel)
+            #lest_mel =  torch.log(est_mel+self.eps)
+            #ltrg_mel =  torch.log(target_mel+self.eps)
+            #lest_mel = self.peak_normalize(lest_mel)
+            #ltrg_mel = self.peak_normalize(ltrg_mel)
 
 
-            MELloss = nn.functional.l1_loss(lest_mel, ltrg_mel, reduction=self.reduction)
+            MELloss = nn.functional.l1_loss(est_mel, target_mel, reduction=self.reduction)
 
             mrstft = auraloss.freq.MultiResolutionSTFTLoss( fft_sizes=[8192 ,2048 , 512], w_phs = 1, w_log_mag =0)
             STFTloss = mrstft(ests, targets)
@@ -83,27 +87,30 @@ class MelMAESpectrogramLoss(_Loss):
     def print_mel(self, input, sr): 
         input = input.astype(np.float32)/ 32768.0
         input = librosa.resample(y=input, target_sr=self.sample_rate, orig_sr=sr)
+        #input = librosa.effects.pitch_shift(input, self.sample_rate, n_steps=-12)
         input = torch.from_numpy(input)
+        input = self.peak_normalize(input)
 
         mel = self.mel_spectrogram(input)
-        log_mel = torch.log1p(mel)
-        lmel_min = log_mel.min()
-        lmel_max = log_mel.max()
-        log_mel = (log_mel - lmel_min) / (lmel_max - lmel_min)
-        plt.imshow(log_mel, vmin = 0, vmax= 1, origin='lower')
+        log_mel = torch.log(mel+self.eps)
+        #log_mel = self.peak_normalize(log_mel)
+        plt.imshow(log_mel, vmin = -4, vmax= 5, origin='lower')
         plt.savefig("/nas/home/gfraticcioli/projects/MambaTransfer/temp/mel.png", dpi=300, bbox_inches='tight')
         plt.show()
     
     def peak_normalize(self,input): 
         i_min = input.min()
         i_max = input.max()
-        return (input - i_min) / (i_max - i_min)
+        if i_min != i_max: 
+            return (input - i_min) / (i_max - i_min)
+        else :
+            return input
 
         
 if __name__ == "__main__":
     #MMLoss = MelMAESpectrogramLoss(k_mae=1,k_stft=0).cpu()
     #print(MMLoss(torch.rand(1,60000).cpu(), torch.rand(1,60000).cpu()))
-    MMLoss =  MelMAESpectrogramLoss(k_mel=1,k_stft=0,sample_rate=32000,n_mels=600, n_fft=4096).cpu()
-    audio, sr = sf.read("/nas/home/gfraticcioli/projects/MambaTransfer/temp/individualAudio.wav",start=0, stop=None ,dtype="int16")
+    MMLoss =  MelMAESpectrogramLoss(k_mel=1,k_stft=0,sample_rate=32000,n_mels=600, n_fft=16384).cpu()
+    audio, sr = sf.read("/nas/home/gfraticcioli/projects/MambaTransfer/temp/individualAudio3.wav",start=0, stop=None ,dtype="int16")
     
     MMLoss.print_mel(audio, sr)
