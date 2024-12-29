@@ -3,35 +3,33 @@ from typing import Optional, Tuple, Union
 import librosa
 import numpy as np
 import torch
-from packaging.version import parse as V
-from torch_complex.tensor import ComplexTensor
+
 #from typeguard import check_argument_types
 
 #from ..utils.complex_utils import is_complex
 from ..utils.inversible_interface import InversibleInterface
 from ..utils.nets_utils import make_pad_mask
-is_torch_1_10_plus = V(torch.__version__) >= V("1.10.0")
 
 
-def is_torch_complex_tensor(c):
-    return not isinstance(c, ComplexTensor) and torch.is_complex(c)
+#def is_torch_complex_tensor(c):
+#    return not isinstance(c, ComplexTensor) and torch.is_complex(c)
+#
+#
+#def is_complex(c):
+#    return isinstance(c, ComplexTensor) or is_torch_complex_tensor(c)
+#
+#
+#def to_complex(c):
+#    # Convert to torch native complex
+#    if isinstance(c, ComplexTensor):
+#        c = c.real + 1j * c.imag
+#        return c
+#    elif torch.is_complex(c):
+#        return c
+#    else:
+#        return torch.view_as_complex(c)
 
-
-def is_complex(c):
-    return isinstance(c, ComplexTensor) or is_torch_complex_tensor(c)
-
-
-def to_complex(c):
-    # Convert to torch native complex
-    if isinstance(c, ComplexTensor):
-        c = c.real + 1j * c.imag
-        return c
-    elif torch.is_complex(c):
-        return c
-    else:
-        return torch.view_as_complex(c)
-
-
+'''
 class Stft(torch.nn.Module, InversibleInterface):
     def __init__(
         self,
@@ -231,3 +229,5 @@ class Stft(torch.nn.Module, InversibleInterface):
         )
 
         return wavs, ilens
+
+        '''

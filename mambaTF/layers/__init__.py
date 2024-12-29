@@ -1,6 +1,6 @@
 
-from .stft_tfgn import Stft
+#from .stft_tfgn import Stft
 
 __all__ = [
-    "Stft",
+    #"Stft",
 ]

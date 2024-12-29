@@ -94,8 +94,8 @@ class MyRichProgressBar(RichProgressBar):
             self._console.clear_live()
             self._metric_component = MetricsTextColumn(trainer,
                                                        self.theme.metrics,
-                                                       #text_delimiter=" ",
-                                                       #metrics_format=".3f"
+                                                       text_delimiter=" ",
+                                                       metrics_format=".3f"
                                                        )
             self.progress = CustomProgress(
                 *self.configure_columns(trainer),

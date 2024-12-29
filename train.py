@@ -1,7 +1,7 @@
 import os
 import sys
 import torch
-from huggingface_hub import resume_inference_endpoint
+
 from torch import Tensor
 import argparse
 import json
@@ -32,7 +32,10 @@ from pytorch_lightning.strategies.ddp import DDPStrategy
 #from collections.abc import MutableMapping
 from mambaTF.utils import MyRichProgressBar, RichProgressBarTheme
 
+
 import warnings
+
+import torch.profiler
 
 
 
@@ -114,20 +117,8 @@ def main(config):
         sr = config["datamodule"]["data_config"]["sample_rate"],
     )
 
-    # Define callbacks
-    print("Instantiating ModelCheckpoint")
+
     callbacks = []
-    checkpoint_dir = os.path.join(exp_dir)
-    checkpoint = ModelCheckpoint(
-        checkpoint_dir,
-        filename="{epoch}",
-        monitor="val_loss/dataloader_idx_0",
-        mode="min",
-        save_top_k=1,
-        verbose=True,
-        save_last=True,
-    )
-    #callbacks.append(checkpoint)
 
     if config["training"]["early_stop"]:
         print("Instantiating EarlyStopping")
@@ -142,18 +133,13 @@ def main(config):
     logger_dir = os.path.join(os.getcwd(), "Experiments", "tensorboard_logs")
     os.makedirs(os.path.join(logger_dir, config["exp"]["exp_name"]), exist_ok=True)
     logger = TensorBoardLogger(logger_dir, name=config["exp"]["exp_name"])
-    #comet_logger = WandbLogger(
-    #    name=config["exp"]["exp_name"],
-    #    save_dir=os.path.join(logger_dir, config["exp"]["exp_name"]),
-    #    project="Real-work-dataset",
-    #    # offline=True
-    #)
 
     trainer = pl.Trainer(
-        precision="32",
+        precision="bf16",
         #precision="32-true", #Euler
         max_epochs=config["training"]["epochs"],
         callbacks=callbacks,
+        enable_checkpointing=False,
         default_root_dir=exp_dir,
         devices=gpus,
         accelerator=distributed_backend,
@@ -162,22 +148,18 @@ def main(config):
         gradient_clip_val=5.0,
         logger=logger,
         sync_batchnorm=True,
+        # profiler='simple'
         # num_sanity_val_steps=0,
         # sync_batchnorm=True,
         # fast_dev_run=True,
     )
+
     trainer.fit(system)
+    checkpoint_dir = os.path.join(exp_dir)
+    trainer.save_checkpoint(checkpoint_dir+"/final_model.ckpt")
+
     print("Finished Training")
-    best_k = {k: v.item() for k, v in checkpoint.best_k_models.items()}
-    with open(os.path.join(exp_dir, "best_k_models.json"), "w") as f:
-        json.dump(best_k, f, indent=0)
 
-    state_dict = torch.load(checkpoint.best_model_path)
-    system.load_state_dict(state_dict=state_dict["state_dict"])
-    system.cpu()
-
-    to_save = system.audio_model.serialize()
-    torch.save(to_save, os.path.join(exp_dir, "best_model.pth"))
     
 if __name__ == "__main__":
     import yaml

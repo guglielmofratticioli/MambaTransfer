@@ -1,33 +1,46 @@
-exp:
-  exp_name: JustMamba_BATCH8
+constants:
+  sample_rate: &sample_rate 16000
+  slice: &slice 1
+  epo: &epo 3000
 
+exp:
+  exp_name: JustMamba_ONETOKEN
+
+# assert self.d_inner % self.headdim == 0
+# self.d_inner = self.expand * self.d_model
+# causal conv 1d  stride rule -> -> d_model * expand / headdim = multiple of 8
 
 # Network config
+# RUN 1 -> OneToken 16khz 1 3000
+# RUN 2 -> linear 
 audionet:
   audionet_name: JustMambaTF
   audionet_config:
-    n_chan: 1
-    n_layers: 2 #6
-    dim: 4000 #16
+    n_layers: 1 #6
+    dim: 4000
+    length: 1
+    headdim: 128
+    expand: 4
+    swap_DL: True
     bidirectional: False
     eps: 1.0e-5
-    sample_rate: 16000
-# Loss config
-  #  loss_func: MelSpectrogramLoss
-  #  config:
-  #    stereo: False
-  #    sample_rate: 8000
+    sample_rate: *sample_rate
+
 loss:
   train:
-    loss_func: MelMAESpectrogramLoss
+    loss_func: MultiLoss
     config:
-      sample_rate: 16000
+      sample_rate: *sample_rate
+      k_mel: 1
+      k_snr: 0
       n_mels: 600
       n_fft: 8192
   val:
-    loss_func: MelMAESpectrogramLoss
+    loss_func: MultiLoss
     config:
-      sample_rate: 16000
+      sample_rate: *sample_rate
+      k_mel: 1
+      k_snr: 0
       n_mels: 600
       n_fft: 8192
 
@@ -37,7 +50,7 @@ training:
   system: AudioLightningModule
   gpus: [0]
   parallel: ddp
-  epochs: 2000
+  epochs: *epo
   early_stop:
     monitor: val_loss/dataloader_idx_0
     mode: min
@@ -66,8 +79,8 @@ datamodule:
     valid_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/val
     test_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/test
     num_chan: 1
-    sample_rate: 16000
-    segment: 1
+    sample_rate: *sample_rate
+    segment: *slice
     source_timbre: 2
     target_timbre: 3
     normalize_audio: false

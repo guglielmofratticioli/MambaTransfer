@@ -72,6 +72,7 @@ class AudioLightningModule(pl.LightningModule):
     def forward(self, wav, mouth=None):
         """Applies forward pass of the model.
 
+        
         Returns:
             :class:`torch.Tensor`
         """
@@ -90,19 +91,18 @@ class AudioLightningModule(pl.LightningModule):
             # Calculate mean and std for sources
             data_stds.append(sources.std().item())
 
-            # Optional: log individual batch statistics to TensorBoard
-            logger.experiment.add_scalar(f"{dataset_name}_batch_std", sources.std(), sample_count)
 
 
     def setup(self, stage=None):
         # Log training dataset statistics
-        self.log_dataset_statistics(self.train_loader, self.logger, dataset_name="train")
+        #self.log_dataset_statistics(self.train_loader, self.logger, dataset_name="train")
 
         # Log validation dataset statistics
-        self.log_dataset_statistics(self.val_loader, self.logger, dataset_name="val")
+        #self.log_dataset_statistics(self.val_loader, self.logger, dataset_name="val")
 
         # Log test dataset statistics
-        self.log_dataset_statistics(self.test_loader, self.logger, dataset_name="test")
+        #self.log_dataset_statistics(self.test_loader, self.logger, dataset_name="test")
+        pass
 
     def training_step(self, batch, batch_nb):
         sources, targets, _ = batch
@@ -135,14 +135,15 @@ class AudioLightningModule(pl.LightningModule):
         est_targets= self(sources)
         loss = self.loss_func["train"](est_targets, targets)
 
-        self.log(
-            "train_loss",
-            loss,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-            logger=True,
-        )
+        if batch_nb % 10 == 0:
+            self.log(
+                "train_loss",
+                loss,
+                on_epoch=True,
+                prog_bar=True,
+                sync_dist=True,
+                logger=True,
+            )
 
         ## Log gradients
         #for name, param in self.audio_model.named_parameters():
@@ -152,105 +153,137 @@ class AudioLightningModule(pl.LightningModule):
         return {"loss": loss}
 
     def validation_step(self, batch, batch_nb, dataloader_idx):
+        with torch.no_grad():
         # cal val loss
-        if dataloader_idx == 0:
-            sources, targets, _ = batch
-            # print(mixtures.shape)
-            est_targets = self(sources)
-            loss = self.loss_func["val"](est_targets, targets)
-            self.log(
-                "val_loss",
-                loss,
-                on_epoch=True,
-                prog_bar=True,
-                sync_dist=True,
-                logger=True,
-            )
+            if dataloader_idx == 0:
+                sources, targets, _ = batch
+                # print(mixtures.shape)
+                est_targets = self(sources)
+                loss = self.loss_func["val"](est_targets, targets)
+                
+                self.log(
+                    "val_loss",
+                    loss,
+                    on_epoch=True,
+                    prog_bar=True,
+                    sync_dist=True,
+                    logger=True,
+                )
+                self.validation_step_outputs.append(loss)
 
-            self.validation_step_outputs.append(loss)
-
-            for sample_idx in range(sources.size(0)):
-                input_audio = sources[sample_idx]
-                target_audio = targets[sample_idx]
-                output_audio = est_targets[sample_idx]
-
-                if batch_nb < 2:
+                if batch_nb % 10 == 0:
+                    input_audio = sources[0]
+                    target_audio = targets[0]
+                    output_audio = est_targets[0]
+                    
                     self.logger.experiment.add_audio(
-                        tag=f'{"val"}/input/batch_{batch_nb}/sample_{sample_idx}/channel_0',
+                        tag=f'{"val"}/input/batch_{batch_nb}/sample_/channel_0',
                         snd_tensor=input_audio[:],
                         global_step=self.current_epoch,
                         sample_rate=self.sr
                     )
                     self.logger.experiment.add_audio(
-                        tag=f'{"val"}/output/batch_{batch_nb}/sample_{sample_idx}/channel_0',
+                        tag=f'{"val"}/output/batch_{batch_nb}/sample_/channel_0',
                         snd_tensor=output_audio[:],
                         global_step=self.current_epoch,
                         sample_rate=self.sr
                     )
                     self.logger.experiment.add_audio(
-                        tag=f'{"val"}/target/batch_{batch_nb}/sample_{sample_idx}/channel_0',
+                        tag=f'{"val"}/target/batch_{batch_nb}/sample_/channel_0',
                         snd_tensor=target_audio[:],
                         global_step=self.current_epoch,
                         sample_rate=self.sr
                     )
 
-            return {"val_loss": loss}
+                return {"val_loss": loss}
 
-        # cal test loss
-        if (self.trainer.current_epoch) % 10 == 0 and dataloader_idx == 1:
+            ## cal test loss
+            if (self.trainer.current_epoch) % 10 == 0 and dataloader_idx == 1:
+                sources, targets, _ = batch
+                # print(mixtures.shape)
+                est_targets = self(sources)
+                tloss = self.loss_func["val"](est_targets, targets)
+                self.log(
+                    "test_loss",
+                    tloss,
+                    on_epoch=True,
+                    prog_bar=True,
+                    sync_dist=True,
+                    logger=True,
+                )
+                self.test_step_outputs.append(tloss)
+                return {"test_loss": tloss}
+
+
+    def test_step(self, batch, batch_nb, dataloader_idx):
+        with torch.no_grad():
             sources, targets, _ = batch
             # print(mixtures.shape)
             est_targets = self(sources)
-            tloss = self.loss_func["val"](est_targets, targets)
-            self.log(
-                "test_loss",
-                tloss,
-                on_epoch=True,
-                prog_bar=True,
-                sync_dist=True,
-                logger=True,
-            )
-            self.test_step_outputs.append(tloss)
-            return {"test_loss": tloss}
 
+            input_audio = sources[0]
+            target_audio = targets[0]
+            output_audio = est_targets[0]
+                
+            self.logger.experiment.add_audio(
+                tag=f'{"test"}/input/batch_{batch_nb}/sample_/channel_0',
+                snd_tensor=input_audio[:],
+                global_step=self.current_epoch,
+                sample_rate=self.sr
+            )
+            self.logger.experiment.add_audio(
+                tag=f'{"test"}/output/batch_{batch_nb}/sample_/channel_0',
+                snd_tensor=output_audio[:],
+                global_step=self.current_epoch,
+                sample_rate=self.sr
+            )
+            return 
+
+            ## cal test loss
+            if (self.trainer.current_epoch) % 10 == 0 and dataloader_idx == 1:
+                sources, targets, _ = batch
+                # print(mixtures.shape)
+                est_targets = self(sources)
+                tloss = self.loss_func["val"](est_targets, targets)
+                self.log(
+                    "test_loss",
+                    tloss,
+                    on_epoch=True,
+                    prog_bar=True,
+                    sync_dist=True,
+                    logger=True,
+                )
+                self.test_step_outputs.append(tloss)
+                return {"test_loss": tloss}
+        pass
+    
     def on_train_epoch_end(self):
         #self.log_waveforms(self.train_loader(), split='train')
-
-
         pass
 
     def on_test_epoch_end(self):
         #self.log_waveforms(self.test_loader_loader, split='test')
         pass
 
-    def on_validation_epoch_end(self):
+    def on_validation_epoch_end(self): 
+        #print('validation ended')
+        pass
         #self.log_waveforms(self.val_loader, split='val')
         # val
-        avg_loss = torch.stack(self.validation_step_outputs).mean()
-        val_loss = torch.mean(self.all_gather(avg_loss))
-        self.log(
-            "lr",
-            self.optimizer.param_groups[0]["lr"],
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        self.logger.experiment.add_scalar(
-            "learning_rate", self.optimizer.param_groups[0]["lr"], self.current_epoch
-        )
-        self.logger.experiment.add_scalar(
-            "val_pit_sisnr", -val_loss, self.current_epoch
-        )
+       
+        #self.log(
+        #    "lr",
+        #    self.optimizer.param_groups[0]["lr"],
+        #    on_epoch=True,
+        #    prog_bar=True,
+        #    sync_dist=True,
+        #)
+        #self.logger.experiment.add_scalar(
+        #    "learning_rate", self.optimizer.param_groups[0]["lr"], self.current_epoch
+        #)
 
-        # test
-        if (self.trainer.current_epoch) % 10 == 0:
-            avg_loss = torch.stack(self.test_step_outputs).mean()
-            test_loss = torch.mean(self.all_gather(avg_loss))
-            self.logger.experiment.add_scalar(
-                "test_pit_sisnr", -test_loss, self.current_epoch
-            )
-        self.validation_step_outputs.clear()  # free memory
-        self.test_step_outputs.clear()  # free memory
+        #self.validation_step_outputs.clear()  # free memory
+        #self.test_step_outputs.clear()  # free memory
 
     def configure_optimizers(self):
         """Initialize optimizers, batch-wise and epoch-wise schedulers."""
@@ -293,10 +326,11 @@ class AudioLightningModule(pl.LightningModule):
         """Validation dataloader"""
         return [self.val_loader, self.test_loader]
 
-    def on_save_checkpoint(self, checkpoint):
-        """Overwrite if you want to save more things in the checkpoint."""
-        checkpoint["training_config"] = self.config
-        return checkpoint
+    # def on_save_checkpoint(self, checkpoint):
+    #     """Overwrite if you want to save more things in the checkpoint."""
+    #     #checkpoint["training_config"] = self.config
+    #     #return checkpoint
+    #     return 
 
 
 

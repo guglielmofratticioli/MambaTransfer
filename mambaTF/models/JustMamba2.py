@@ -11,27 +11,34 @@ from torch.nn import init
 from torch.nn.parameter import Parameter
 
 from packaging.version import parse as V
-from torch_complex.tensor import ComplexTensor
+
 is_torch_1_9_plus = V(torch.__version__) >= V("1.9.0")
 
-from ..layers import Stft
-from ..utils.complex_utils import is_torch_complex_tensor
-from ..utils.complex_utils import new_complex_like
-from ..utils.get_layer_from_string import get_layer
+
 from .base_model import BaseModel
 
 from functools import partial
-from mamba_ssm.modules.mamba_simple import Mamba, Block
 
-#from mamba_ssm.modules.block import Block #Euler
+#
+# from mamba_ssm.modules.mamba_simple import Mamba
+# from mamba_ssm.modules.mamba_simple import Block
+# from mamba_ssm.models.mixer_seq_simple import _init_weights
+# from mamba_ssm.ops.triton.layernorm import RMSNorm #-> torch 2.0.0
+
+#EULER
+from mamba_ssm.modules.mamba2_simple import Mamba2Simple
+from mamba_ssm.modules.block import Block
 from mamba_ssm.models.mixer_seq_simple import _init_weights
-#from mamba_ssm.ops.triton.layer_norm import RMSNorm #Euler
-from mamba_ssm.ops.triton.layernorm import RMSNorm #-> torch 2.0.0
+from mamba_ssm.ops.triton.layer_norm import RMSNorm #-> torch 2.0.0
 
 class MambaBlock(nn.Module):
     def __init__(self,
+                 length,
                  dim,
+                 swap_DL=True,
                  eps=1e-5,
+                 headdim=64,
+                 expand=4,
                  n_layer=1,
                  bidirectional=False):
         super(MambaBlock, self).__init__()
@@ -39,24 +46,34 @@ class MambaBlock(nn.Module):
         #self.in_channels = dim 
         # in_channels = 1
 
-        self.norm = LayerNormalization4D(dim, eps=eps)
+        #self.norm = LayerNormalization4D(dim, eps=eps)
         self.dim = dim
+        self.length = length
         self.eps = eps
         self.n_layer = n_layer
         self.bidirectional = bidirectional
+        self.swap_DL = swap_DL
 
-        self.linear = nn.ConvTranspose1d(
-            self.dim * 2, 1, dim
-        )
+        # self.linear = nn.ConvTranspose1d(
+        #     self.dim * 2, 1, dim
+        # )
 
+
+        self.linear_proj = nn.Linear(1, dim)
+        self.linear_reproject = nn.Linear(dim*length, length)
+
+        # assert self.d_inner % self.headdim == 0
+        # self.d_inner = self.expand * self.d_model
+        # causal conv 1d  stride rule -> -> d_model * expand / headdim = multiple of 8
         self.forward_blocks = nn.ModuleList([])
         for i in range(n_layer):
             self.forward_blocks.append(
                 Block(
                     dim=self.dim,
-                    mixer_cls=partial(Mamba, layer_idx=i, d_state=16, d_conv=4, expand=4),
+                    mixer_cls=partial(Mamba2Simple, layer_idx=i, d_state=16, headdim=headdim, d_conv=4, expand=expand, use_causal_conv1d_fn=False,use_mem_eff_path=False),
                     norm_cls=partial(RMSNorm, eps=1e-5),
                     fused_add_norm=False,
+                    mlp_cls= nn.Identity
                 )
             )
         self.backward_blocks = None
@@ -66,9 +83,10 @@ class MambaBlock(nn.Module):
                 self.backward_blocks.append(
                         Block(
                         dim=self.dim,
-                        mixer_cls=partial(Mamba, layer_idx=i, d_state=16, d_conv=4, expand=4),
+                        mixer_cls=partial(Mamba2Simple, layer_idx=i, d_state=16, headdim=headdim, d_conv=4, expand=expand, use_causal_conv1d_fn=False,use_mem_eff_path=False),
                         norm_cls=partial(RMSNorm, eps=1e-5),
                         fused_add_norm=False,
+                        mlp_cls= nn.Identity
                     )
                 )
 
@@ -76,115 +94,108 @@ class MambaBlock(nn.Module):
 
     def forward(self, x):
 
-        # C -> dim convolutional maps
-        #B, C, old_T = x.shape
-        #T = math.ceil((old_T - self.x_slice) / self.emb_hs) * self.emb_hs + self.x_slice
-        #x = F.pad(x, (0, 0, T - old_T))
-
         # intra RNN
-        # [B,T,1]
+        # [B,T]
         input_ = x
+        B, T = input_.shape
         batch = input_
-        #batch = batch.unsqueeze(1)
+
+        if not self.swap_DL:
+            batch = input_.unsqueeze(1) # [B T 1]
+            batch = batch.view(B*T, -1)
+            batch = self.linear_proj(batch) # [B T C]
+            batch = batch.view(B, T, -1)      
+
+        if self.swap_DL:
+            # in position 1 put n windows of size dim
+            batch = batch.unfold(1, self.dim, self.dim) # [B, n, T]
+        #    batch = batch.transpose(1, 2)  
 
         #batch = self.norm(input_)  # [B, C, T]
-
-        #batch = F.unfold(
-        #    batch, (self.x_slice, 1)
-        #)  # [B, C*x_slice, -1]
-
-        batch = batch.unfold(1, self.dim, self.dim)
-        #
-
-        # Expects input [B, T, C*x_slice] where C = dim -> channel filters
+        # Expects input [B, T, C] where C = embeddings channels
 
         for_residual = None
         forward_f = batch.clone()
         for block in self.forward_blocks:
-            forward_f, for_residual = block(forward_f, for_residual, inference_params=None)
+            forward_f, for_residual = block(forward_f, for_residual)
         residual = (forward_f + for_residual) if for_residual is not None else forward_f
 
         if self.bidirectional:
             back_residual = None
             backward_f = torch.flip(batch, [1])
             for block in self.backward_blocks:
-                backward_f, back_residual = block(backward_f, back_residual, inference_params=None)
+                backward_f, back_residual = block(backward_f, back_residual)
             back_residual = (backward_f + back_residual) if back_residual is not None else backward_f
 
             back_residual = torch.flip(back_residual, [1])
             residual = torch.cat([residual, back_residual], -1)
 
             residual = residual.transpose(1, 2)  # [B, H, -1]
-            residual = self.linear(residual)  # [B, C, T]
+            #residual = self.linear(residual)  # [B, C, T]
 
         #residual = residual.view([B, C, T])
         residual = residual.flatten(start_dim=1)
+        
+        if not self.swap_DL:
+            residual = self.linear_reproject(residual)
         
         out = residual + input_  # [B, C, T]
 
         return out
         #
 
-class JustMambaTF(BaseModel):
+class JustMamba2(BaseModel):
     def __init__(
         self,
-        n_chan=2,
-        n_layers=6,
-        dim=1,
-        x_slice=4,
+        dim,
+        length,
+        headdim=64,
+        expand=2,
+        swap_DL=True,
+        n_layers=1,
         eps=1.0e-5,
         bidirectional = False,
         sample_rate=32000
     ):
         super().__init__(sample_rate)
         self.n_layers = n_layers
-        self.n_chan = n_chan
         self.bidirectional = bidirectional
 
         self.eps = eps
-
         self.blocks = nn.ModuleList([])
         for _ in range(n_layers):
             self.blocks.append(
                 MambaBlock(
                     dim = dim,
+                    length = length,
+                    headdim=headdim,
+                    expand=expand,
                     eps = eps,
                     n_layer=1,
-                    bidirectional=self.bidirectional)
+                    swap_DL=swap_DL,
+                    bidirectional=self.bidirectional),
                 )
 
     def forward(
         self,
         input: torch.Tensor,
     ) -> Tuple[List[torch.Tensor], torch.Tensor, OrderedDict]:
-        # input shape: (B, T, M)
-        #was_one_d = False
-        #if input.ndim == 1:
-        #    was_one_d = True
-        #    input = input.unsqueeze(0).unsqueeze(2)
-        #elif input.ndim == 2:
-        #    was_one_d = True
-        #    input = input.unsqueeze(2)
-        #elif input.ndim == 3:
-        #    pass
 
-        n_samples = input.shape[1] #T
+
+        n_samples = input.shape[1] # [B,T]
+
+        batch = input
+
+        # EMBEDDING CONVOLUTION
+        #batch = batch.unsqueeze(1)
+        #batch = self.conv_block(batch)  # [B, n_chan, T]
+        #batch = batch.transpose(1,2)
 
         batch = input # [B, M, T]
         for ii in range(self.n_layers):
             batch = self.blocks[ii](batch)  # [B, -1, T]
 
-        # Ensure the output has the correct length
-        #batch = self.pad2(batch, n_samples)  # [B, 2, N_samples]
-
-        #input_rms = torch.sqrt(torch.mean(input[:,:,0] ** 2, dim=1, keepdim=True))
-        #batch_rms = torch.sqrt(torch.mean(batch ** 2, dim=1, keepdim=True)) # Shape: (B, 1)
-#
-        #if batch_rms > self.eps :
-        #    batch = input_rms/batch_rms * batch
-
         batch = self.normalize_batch(batch,input)
-        #batch = self.peak_normalize(batch)
 
         return batch
 

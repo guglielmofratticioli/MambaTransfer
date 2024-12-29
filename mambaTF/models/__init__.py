@@ -1,10 +1,12 @@
 
-from .MambaTF import MambaTF
+#from .MambaTF import MambaTF
 from .JustMambaTF import JustMambaTF
+from .JustMamba2 import JustMamba2
 
 __all__ = [
-   "MambaTF",
+   #"MambaTF",
     "JustMambaTF"
+    "JustMamba2"
 ]
 
 
