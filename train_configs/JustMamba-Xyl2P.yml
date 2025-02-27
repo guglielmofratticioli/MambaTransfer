@@ -1,0 +1,92 @@
+constants:
+  sample_rate: &sample_rate 48000
+  slice: &slice 0.256
+  epo: &epo 3000
+
+exp:
+  exp_name: 00_JustMambaXyl2P
+
+# assert self.d_inner % self.headdim == 0
+# self.d_inner = self.expand * self.d_model
+# causal conv 1d  stride rule -> -> d_model * expand / headdim = multiple of 8
+
+# Network config
+# RUN 1 -> Stacking 16khz 1len 3000dim
+# RUN 2 -> linear  18khz .25 4500 16d 64h
+# 
+audionet:
+  audionet_name: JustMamba2
+  audionet_config:
+    n_layers: 1 #6
+    dim: 4096
+    hop: 1
+    length: 1
+    headdim: 128
+    expand: 4
+    swap_DL: True
+    bidirectional: True
+    eps: 1.0e-5
+    sample_rate: *sample_rate
+
+loss:
+  train:
+    loss_func: MultiLoss
+    config:
+      sample_rate: *sample_rate
+      k_mel: 1
+      k_rms: 0
+      n_mels: 600
+      n_fft: 4096
+  val:
+    loss_func: MultiLoss
+    config:
+      sample_rate: *sample_rate
+      k_mel: .8
+      k_rms: .2
+      n_mels: 600
+      n_fft: 4096
+
+
+
+training:
+  system: AudioLightningModule
+  gpus: [0]
+  parallel: ddp
+  epochs: *epo
+  early_stop:
+    monitor: val_loss/dataloader_idx_0
+    mode: min
+    patience: 1000
+    verbose: true
+  SpeedAug: False
+
+# Optim config
+optimizer:
+  optim_name: adam
+  lr: 0.00001
+  weight_decay: 0
+
+# Sche config
+scheduler:
+  sche_name: ReduceLROnPlateau
+  sche_config:
+    patience: 400
+    factor: 0.8
+
+# Data config
+datamodule:
+  data_name: starNetDataModule
+  data_config:
+    train_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/train
+    valid_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/val
+    test_dir: /nas/home/gfraticcioli/datasets/starnet/metadatas/test
+    num_chan: 1
+    sample_rate: *sample_rate
+    segment: *slice
+    source_timbre: 2
+    target_timbre: 5
+    normalize_audio: false
+    batch_size: 1
+    num_workers: 8
+    pin_memory: true
+    persistent_workers: false
