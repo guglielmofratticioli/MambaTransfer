@@ -17,11 +17,13 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from mambaTF.utils import MyRichProgressBar, RichProgressBarTheme
 
+from pytorch_lightning.tuner import Tuner
+
 # Add the new argument for checkpoint
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--conf_dir",
-    default="train_configs/MambaNet-F2str_512.yml",
+    default="train_configs/NextTrain_legit/JustMamba-F2str Baby.yml",
     help="Full path to save best validation model",
 )
 parser.add_argument(
@@ -60,7 +62,7 @@ def main(config):
         config=config,
         sr=config["datamodule"]["data_config"]["sample_rate"],
     )
-
+    
     trainer = pl.Trainer(
         precision="bf16",
         max_epochs=config["training"]["epochs"],
@@ -76,15 +78,17 @@ def main(config):
         sync_batchnorm=True,
     )
 
-    # Use the checkpoint path if provided; otherwise, start from scratch
-    ckpt_path = config.get("ckpt", None)
-    if ckpt is not None:
-        print(f" -> -> -> -> Resuming training from checkpoint: {ckpt}")
-    else:
-        print(" -> -> -> -> Starting training from scratch")
-    trainer.fit(system, ckpt_path=ckpt)
+    tuner = Tuner(trainer)
+    lr_finder = tuner.lr_find(system, train_dataloaders=train_loader)
+    fig = lr_finder.plot(suggest=True)
+    fig.show()
+    # Get the suggested learning rate
+    suggested_lr = lr_finder.suggestion()
+    print(f"Suggested learning rate: {suggested_lr}")
+    
+    #trainer.fit(system, ckpt_path=ckpt)
 
-    trainer.save_checkpoint(os.path.join(checkpoint_dir, "final_model.ckpt"))
+    #trainer.save_checkpoint(os.path.join(checkpoint_dir, "final_model.ckpt"))
 
     print("Finished Training")
 

@@ -1,9 +1,7 @@
 import os
 import torch
-import argparse
-import pytorch_lightning as pl
-import yaml
 
+import argparse
 import mambaTF.datas
 import mambaTF.models
 import mambaTF.system
@@ -12,33 +10,35 @@ import mambaTF.metrics
 import mambaTF.utils
 from mambaTF.system import make_optimizer
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, RichProgressBar
+from pytorch_lightning.callbacks.progress.rich_progress import *
 from pytorch_lightning.loggers import TensorBoardLogger
+
+# # # # # # ssh -NfL 6006:localhost:6006 gfraticcioli@10.79.23.8  (Hack)
+# # # # # # ssh -NfL 6006:localhost:6006 gfraticcioli@10.79.0.8  (Euler)
+#### Run on SSH shell ->
+# # # # # # tensorboard --logdir=/nas/home/gfraticcioli/projects/MambaTransfer/Experiments/tensorboard_logs/MambaTF-StarNet --bind_all
+
+from pytorch_lightning.loggers.wandb import WandbLogger
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from mambaTF.utils import MyRichProgressBar, RichProgressBarTheme
 
-# Add the new argument for checkpoint
+import torch.profiler
+
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--conf_dir",
-    default="train_configs/MambaNet-F2str_512.yml",
+    default="configs/MambaCoder-starNet.yml",
     help="Full path to save best validation model",
 )
-parser.add_argument(
-    "--ckpt",
-    default="/nas/home/gfraticcioli/projects/MambaTransfer/Experiments/tensorboard_logs/SnakeNet/version_2/checkpoints/epoch=599-step=49800.ckpt",
-    help="Path to a checkpoint file to resume training from (default: None)",
-)
-
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 os.environ["TORCH_USE_CUDA_DSA"] = "1"
 torch.backends.nnpack.enabled = False
 
 def main(config):
-
-    ckpt = None
+    
     train_loader, val_loader, test_loader = make_datamodule(config)
-    model = make_models(config)
+    model, SnakeNet = make_models(config)
     scheduler, optimizer = make_scheduler(config, model, train_loader)
     logger, exp_dir, checkpoint_dir, conf_path = make_loggers(config)
     loss_func = make_lossFn(config)
@@ -49,8 +49,9 @@ def main(config):
     distributed_backend = "cuda" if torch.cuda.is_available() else None
 
     print("Instantiating System <{}>".format(config["training"]["system"]))
-    system = getattr(mambaTF.system, config["training"]["system"])(
-        audio_model=model,
+    system = mambaTF.system.CombinedLightningModule(
+        frozen_model=model,
+        new_network=SnakeNet,
         loss_func=loss_func,
         optimizer=optimizer,
         train_loader=train_loader,
@@ -58,11 +59,12 @@ def main(config):
         test_loader=test_loader,
         scheduler=scheduler,
         config=config,
-        sr=config["datamodule"]["data_config"]["sample_rate"],
+        sr = config["datamodule"]["data_config"]["sample_rate"],
     )
 
     trainer = pl.Trainer(
         precision="bf16",
+        #precision="32-true", #Euler
         max_epochs=config["training"]["epochs"],
         callbacks=callbacks,
         enable_checkpointing=True,
@@ -74,20 +76,17 @@ def main(config):
         gradient_clip_val=5.0,
         logger=logger,
         sync_batchnorm=True,
+        # profiler='simple'
+        # num_sanity_val_steps=0,
+        # sync_batchnorm=True,
+        # fast_dev_run=True,
     )
 
-    # Use the checkpoint path if provided; otherwise, start from scratch
-    ckpt_path = config.get("ckpt", None)
-    if ckpt is not None:
-        print(f" -> -> -> -> Resuming training from checkpoint: {ckpt}")
-    else:
-        print(" -> -> -> -> Starting training from scratch")
-    trainer.fit(system, ckpt_path=ckpt)
+    trainer.fit(system)
 
-    trainer.save_checkpoint(os.path.join(checkpoint_dir, "final_model.ckpt"))
+    trainer.save_checkpoint(checkpoint_dir+"/final_model.ckpt")
 
     print("Finished Training")
-
 
 def define_callbacks(config):
     callbacks = []
@@ -97,32 +96,33 @@ def define_callbacks(config):
         callbacks.append(EarlyStopping(**config["training"]["early_stop"]))
     callbacks.append(MyRichProgressBar(theme=RichProgressBarTheme()))
 
-    # ModelCheckpoint to save the best model every 200 epochs
+    # ModelCheckpoint to save the best model every 100 epochs
+
+    # Add this callback to your existing code
     checkpoint100_callback = ModelCheckpoint(
         every_n_epochs=200,
-        save_weights_only=False,  # Only save model weights (not optimizer states etc.)
-        verbose=False
+        save_weights_only=True,  # Only save model weights (not optimizer states etc.)
+        verbose=False  # Disable logging messages
     )
-    callbacks.append(checkpoint100_callback)
-
+    callbacks.append(checkpoint100_callback) 
     checkpoint_callback = ModelCheckpoint(
         monitor="val_loss/dataloader_idx_0",  # Replace with the metric you want to track
         mode="min",  # "min" for loss, "max" for accuracy
         save_top_k=1,  # Keep only the best checkpoint
-        save_weights_only=False,  # Save only model weights
-        verbose=False
+        save_weights_only=True,  # Save only model weights
+        verbose=False  # Disable logging messages
     )
-    # Optionally add the checkpoint_callback:
-    callbacks.append(checkpoint_callback)
+    callbacks.append(checkpoint_callback) # Add the callback to the callbacks list
     return callbacks
 
 def make_datamodule(config):
     torch.backends.nnpack.enabled = False
     print("Instantiating datamodule <{}>".format(config["datamodule"]["data_name"]))
-    datamodule = getattr(mambaTF.datas, config["datamodule"]["data_name"])(
+    datamodule: object = getattr(mambaTF.datas, config["datamodule"]["data_name"])(
         **config["datamodule"]["data_config"]
     )
     datamodule.setup()
+
     train_loader, val_loader, test_loader = datamodule.make_loader
     return train_loader, val_loader, test_loader
 
@@ -131,9 +131,11 @@ def make_models(config):
     model = getattr(mambaTF.models, config["audionet"]["audionet_name"])(
         **config["audionet"]["audionet_config"],
     )
-    return model
+    SnakeNet = mambaTF.models.SnakeNet()
+    return model, SnakeNet
 
-def make_scheduler(config, model, train_loader):
+def make_scheduler(config,model, train_loader):
+    # Define scheduler
     print("Instantiating Optimizer <{}>".format(config["optimizer"]["optim_name"]))
     optimizer = make_optimizer(model.parameters(), **config["optimizer"])
     scheduler = None
@@ -150,9 +152,10 @@ def make_scheduler(config, model, train_loader):
                 ),
                 "interval": "step",
             }
-    return scheduler, optimizer
+        return scheduler, optimizer
 
 def make_loggers(config):
+    # Just after instantiating, save the args. Easy loading in the future.
     config["main_args"]["exp_dir"] = os.path.join(
         os.getcwd(), "Experiments", "checkpoint", config["exp"]["exp_name"]
     )
@@ -161,17 +164,23 @@ def make_loggers(config):
     os.makedirs(exp_dir, exist_ok=True)
     conf_path = os.path.join(exp_dir, "conf.yml")
     
+    # Save the config file
     with open(conf_path, "w") as outfile:
         yaml.safe_dump(config, outfile)
     
+
+    # default logger used by trainer
     logger_dir = os.path.join(os.getcwd(), "Experiments", "tensorboard_logs")
     os.makedirs(os.path.join(logger_dir, config["exp"]["exp_name"]), exist_ok=True)
     logger = TensorBoardLogger(logger_dir, name=config["exp"]["exp_name"])
+
     return logger, exp_dir, checkpoint_dir, conf_path
 
+
+
 def make_lossFn(config): 
-    print("Instantiating Loss, Train <{}>, Val <{}>".format(
-        config["loss"]["train"], config["loss"]["val"])
+    # Define Loss function.
+    print("Instantiating Loss, Train <{}>, Val <{}>".format(config["loss"]["train"], config["loss"]["val"])
     )
     loss_func = {
         "train": getattr(mambaTF.losses, config["loss"]["train"]["loss_func"])(
@@ -184,6 +193,7 @@ def make_lossFn(config):
     return loss_func
 
 if __name__ == "__main__":
+    import yaml
     from pprint import pprint
     from mambaTF.utils.parser_utils import (
         prepare_parser_from_dict,
@@ -194,6 +204,7 @@ if __name__ == "__main__":
     with open(args.conf_dir) as f:
         def_conf = yaml.safe_load(f)
     parser = prepare_parser_from_dict(def_conf, parser=parser)
-    arg_dic, plain_args = parse_args_as_dict(parser, return_plain_args=True)
 
+    arg_dic, plain_args = parse_args_as_dict(parser, return_plain_args=True)
+    # pprint(arg_dic)
     main(arg_dic)

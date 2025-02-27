@@ -237,7 +237,6 @@ tornado==6.3.3
 tqdm==4.65.0
 traitlets==5.13.0
 transformers==4.38.2
-triton==2.0.0
 typeguard==2.13.3
 types-python-dateutil==2.8.19.14
 typing-extensions==4.8.0
