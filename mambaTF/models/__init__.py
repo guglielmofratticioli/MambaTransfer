@@ -1,12 +1,23 @@
 
 #from .MambaTF import MambaTF
-from .JustMambaTF import JustMambaTF
+
+from .MambaCoder import MambaCoder
+from .MambaCoderSimple import MambaCoderSimple
+from .MambaMix import MambaMix
+
+from .MambaNet import MambaNet
 from .JustMamba2 import JustMamba2
+from .MambaMix_Stride import MambaMix_Stride
 
 __all__ = [
    #"MambaTF",
-    "JustMambaTF"
-    "JustMamba2"
+
+    "MambaMix", 
+    "MambaCoder",
+    "MambaCoderSimple",
+    "SnakeNet",
+    "JustMamba2",
+    "MambaMix_Stride"
 ]
 
 

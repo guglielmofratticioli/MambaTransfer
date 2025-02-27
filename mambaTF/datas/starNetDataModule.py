@@ -172,7 +172,15 @@ class starNetDataset(Dataset):
         if sf.info(self.sources[index]).frames == seg_len or not self.random_start:
             rand_start = 0
         else:
-            rand_start = np.random.randint(2*seg_len, sf.info(self.sources[index]).frames - 2*seg_len)
+            # assure that the segment is not silent
+            while True:
+                rand_start = np.random.randint(2*seg_len, sf.info(self.sources[index]).frames - 2*seg_len)
+                source, sr = sf.read(
+                    self.sources[index], start=rand_start, stop=rand_start+int(seg_len), dtype="int16"
+                )
+                rms = np.sqrt(np.mean((source.astype(np.float32)/ np.iinfo(np.int16).max)**2))
+                if rms > 0.005 and rms is not None:
+                    break
 
         if not self.random_start:
             stop = None

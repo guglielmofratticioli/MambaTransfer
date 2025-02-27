@@ -9,16 +9,10 @@ import torch.nn.functional as F
 from click.core import batch
 from torch.nn import init
 from torch.nn.parameter import Parameter
-
 from packaging.version import parse as V
-
 is_torch_1_9_plus = V(torch.__version__) >= V("1.9.0")
-
-
 from .base_model import BaseModel
-
 from functools import partial
-
 
 # from mamba_ssm.modules.mamba_simple import Mamba
 # from mamba_ssm.modules.mamba_simple import Block
@@ -27,12 +21,96 @@ from functools import partial
 
 #EULER
 #from mamba_ssm.modules.mamba2_simple import Mamba2Simple
-from mamba_ssm.modules.mamba2 import Mamba2
+#from mamba_ssm.modules.mamba2 import Mamba2
 from mamba_ssm.modules.mamba_simple import Mamba
 from mamba_ssm.modules.block import Block
 from mamba_ssm.models.mixer_seq_simple import _init_weights
 from mamba_ssm.ops.triton.layer_norm import RMSNorm #-> torch 2.0.0
 
+# Modified model without skip connections.
+# Modified model: No skip connections and no fusion blocks.
+class SnakeNet1D(nn.Module):
+    def __init__(self, dim, stride=2, kernel_sizes=[16, 32, 64]):  # Dynamically chosen kernel sizes
+        super(SnakeNet1D, self).__init__()
+
+        # Encoder
+        self.enc1 = nn.Sequential(
+            nn.Conv1d(in_channels=1, out_channels=4 * dim,
+                    kernel_size=kernel_sizes[0], stride=stride,
+                    padding=(kernel_sizes[0] - stride) // 2),  
+            nn.BatchNorm1d(4 * dim),
+            nn.ReLU()
+        )
+        self.enc2 = nn.Sequential(
+            nn.Conv1d(in_channels=4 * dim, out_channels=2 * dim,
+                    kernel_size=kernel_sizes[1], stride=stride,
+                    padding=(kernel_sizes[1] - stride) // 2),
+            nn.BatchNorm1d(2 * dim),
+            nn.ReLU()
+        )
+        self.enc3 = nn.Sequential(
+            nn.Conv1d(in_channels=2 * dim, out_channels=dim,
+                    kernel_size=kernel_sizes[2], stride=stride,
+                    padding=(kernel_sizes[2] - stride) // 2),
+            nn.BatchNorm1d(dim),
+            nn.ReLU()
+        )
+
+        # Decoder
+        self.dec1 = nn.Sequential(
+            nn.ConvTranspose1d(in_channels=dim, out_channels=2 * dim,
+                            kernel_size=kernel_sizes[2], stride=stride,
+                            padding=(kernel_sizes[2] - stride) // 2),
+            nn.BatchNorm1d(2 * dim),
+            nn.ReLU()
+        )
+        self.dec2 = nn.Sequential(
+            nn.ConvTranspose1d(in_channels=4 * dim, out_channels=2 * dim,
+                            kernel_size=kernel_sizes[1], stride=stride,
+                            padding=(kernel_sizes[1] - stride) // 2),
+            nn.BatchNorm1d(2 * dim),
+            nn.ReLU()
+        )
+        self.dec3 = nn.ConvTranspose1d(in_channels=6 * dim, out_channels=1,
+                                    kernel_size=kernel_sizes[0], stride=stride,
+                                    padding=(kernel_sizes[0] - stride) // 2)
+
+
+        # The Snake block remains unchanged.
+        self.Snake = Block(
+            dim=dim,
+            mixer_cls=partial(Mamba, layer_idx=0, d_state=8, d_conv=2, expand=4),
+            norm_cls=partial(RMSNorm, eps=1e-5),
+            fused_add_norm=False,
+            mlp_cls=nn.Identity
+        )
+
+    def forward(self, x):
+        x = x.unsqueeze(1)  # (B, 1, L)
+        x = x+1
+        # Encoder forward
+        x1 = self.enc1(x)   # (B, 1024, L1)
+        x2 = self.enc2(x1)  # (B, 2048, L2)
+        x3 = self.enc3(x2)  # (B, 512, L3)
+        
+        # Process the bottleneck features with the Snake block.
+        x3 = x3.transpose(1, 2)  # (B, L3, 512)
+        forward_f = x3.clone()
+        forward_f, for_residual = self.Snake(forward_f, None)
+        x3 = (forward_f + for_residual) if for_residual is not None else forward_f
+        x3 = x3 + forward_f
+        x3 = x3.transpose(1, 2)  # (B, 512, L3)
+
+        # Decoder forward using transposed convolutions only.
+        d1 = self.dec1(x3)  # Upsample: (B, 1024, ?)
+        d1 = torch.cat([d1, x2], dim=1)  # (B, 3072, L/16)
+        d2 = self.dec2(d1)  # Upsample: (B, 512, ?)
+        d2 = torch.cat([d2, x1], dim=1)  # (B, 1536, L/4)
+        out = self.dec3(d2) # Final reconstruction: (B, 1, original_length)
+        
+        out = out - 1 
+        return out
+    
 class MambaBlock(nn.Module):
     def __init__(self,
                  length,
@@ -43,13 +121,13 @@ class MambaBlock(nn.Module):
                  headdim=64,
                  expand=4,
                  n_layer=1,
-                 bidirectional=False):
+                 n_mamba=1,
+                 snake_dim=1024,
+                 stride=1,
+                 bidirectional=False,
+                 use_SnakeNet=True):
         super(MambaBlock, self).__init__()
 
-        #self.in_channels = dim 
-        # in_channels = 1
-
-        #self.norm = LayerNormalization4D(dim, eps=eps)
         self.dim = dim
         self.length = length
         self.hop = hop # 0.0 - 1.0
@@ -57,20 +135,19 @@ class MambaBlock(nn.Module):
         self.n_layer = n_layer
         self.bidirectional = bidirectional
         self.swap_DL = swap_DL
+        self.use_SnakeNet = use_SnakeNet
 
-        self.linear = nn.ConvTranspose1d(self.dim * 2, 1, dim, stride=1, padding=1)
-        self.linear_proj = nn.Linear(1, dim)
-        self.linear_reproject = nn.Linear(dim, 1)
+        if use_SnakeNet is True:
+            self.snakeNet = SnakeNet1D(dim=snake_dim,stride=stride)
 
         # assert self.d_inner % self.headdim == 0
         # self.d_inner = self.expand * self.d_model
         # causal conv 1d  stride rule -> -> d_model * expand / headdim = multiple of 8
         self.forward_blocks = nn.ModuleList([])
-        for i in range(n_layer):
+        for i in range(n_mamba):
             self.forward_blocks.append(
                 Block(
                     dim=self.dim,
-                    #mixer_cls=partial(Mamba2Simple, layer_idx=i, d_state=16, headdim=headdim, d_conv=4, expand=expand, use_causal_conv1d_fn=False,use_mem_eff_path=False),
                     #mixer_cls=partial(Mamba, layer_idx=i, d_state=16, headdim=headdim, d_conv=4, expand=expand, use_mem_eff_path=True),
                     mixer_cls=partial(Mamba, layer_idx=i, d_state=16, d_conv=4, expand=expand),
                     norm_cls=partial(RMSNorm, eps=1e-5),
@@ -81,11 +158,10 @@ class MambaBlock(nn.Module):
         self.backward_blocks = None
         if bidirectional:
             self.backward_blocks = nn.ModuleList([])
-            for i in range(n_layer):
+            for i in range(n_mamba):
                 self.backward_blocks.append(
                         Block(
                         dim=self.dim,
-                        #mixer_cls=partial(Mamba2Simple, layer_idx=i, d_state=16, headdim=headdim, d_conv=4, expand=expand, use_causal_conv1d_fn=False,use_mem_eff_path=False),
                         #mixer_cls=partial(Mamba, layer_idx=i, d_state=16, headdim=headdim, d_conv=4, expand=expand, use_mem_eff_path=True),
                         mixer_cls=partial(Mamba, layer_idx=i, d_state=16, d_conv=4, expand=expand),
                         norm_cls=partial(RMSNorm, eps=1e-5),
@@ -103,12 +179,12 @@ class MambaBlock(nn.Module):
         input_ = x
         B, T = input_.shape
         batch = input_
-       
+        
+        # in position 1 put n windows of size dim
         batch = batch.unfold(1, self.dim, int(self.dim*self.hop)) # [B, n, T]
 
         #batch = self.norm(input_)  # [B, C, T]
         # Expects input [B, T, C] where C = embeddings channels
-
         for_residual = None
         forward_f = batch.clone()
         for block in self.forward_blocks:
@@ -124,20 +200,17 @@ class MambaBlock(nn.Module):
 
             back_residual = torch.flip(back_residual, [1])
             residual = (residual + back_residual) / 2  # Media delle due direzioni
-            #residual = torch.cat([residual, back_residual], -1)
-            #residual = residual.transpose(1, 2)  # [B, H, -1]
-            #residual = self.linear(residual)  # [B, C, T]
 
         #residual = residual.view([B, C, T])
-        if self.hop<1: 
-            #residual = residual.flatten(start_dim=1)
-            # Step 1: Create a triangular window of size 4096
+        #residual = residual.flatten(start_dim=1)
+        # Step 1: Create a triangular window of size 4096
+        if self.hop < 1:
             triangular_window = torch.linspace(0, 1, int(self.dim/2))  # First half of the triangle
             triangular_window = torch.cat((triangular_window, torch.linspace(1, 0, int(self.dim/2)))) # Second half of the triangle
             triangular_window = triangular_window.unsqueeze(0).unsqueeze(0)  # [1, 1, 4096]
             triangular_window = triangular_window.expand(residual.size(0), residual.size(1), -1).to(residual.device)  # [1, 15, 4096]
             residual = residual * triangular_window
-            
+        
         residual = F.fold(
             residual.permute(0,2,1),
             output_size=(1, T),
@@ -146,12 +219,20 @@ class MambaBlock(nn.Module):
             )
         residual = residual[:,0,0,:]
         
-        out = residual #+ input_  # [B, C, T]
+        x = residual + input_
+
+        if self.use_SnakeNet: 
+            # Bottleneck to reduce tremolo effect
+            #x = self.encoder(x)
+            x = self.snakeNet(x)
+            #x = self.decoder(x)
+            x = x[:,0,:]  # [B, 1, T] -> [B, T]
+
+        out = x
 
         return out
-        #
 
-class JustMamba2(BaseModel):
+class MambaMix_Stride(BaseModel):
     def __init__(
         self,
         dim,
@@ -161,14 +242,17 @@ class JustMamba2(BaseModel):
         expand=2,
         swap_DL=True,
         n_layers=1,
+        n_mamba=1,
+        snake_dim=1024,
+        stride=1,
         eps=1.0e-5,
         bidirectional = False,
+        use_SnakeNet=True,
         sample_rate=32000
     ):
         super().__init__(sample_rate)
         self.n_layers = n_layers
         self.bidirectional = bidirectional
-
         self.eps = eps
         self.blocks = nn.ModuleList([])
         for _ in range(n_layers):
@@ -181,31 +265,24 @@ class JustMamba2(BaseModel):
                     expand=expand,
                     eps = eps,
                     n_layer=1,
+                    n_mamba=n_mamba,
+                    snake_dim=snake_dim,
+                    stride=1,
                     swap_DL=swap_DL,
-                    bidirectional=self.bidirectional),
+                    bidirectional=self.bidirectional,
+                    use_SnakeNet=use_SnakeNet)
                 )
 
     def forward(
         self,
         input: torch.Tensor,
     ) -> Tuple[List[torch.Tensor], torch.Tensor, OrderedDict]:
-
-
         n_samples = input.shape[1] # [B,T]
-
         batch = input
-
-        # EMBEDDING CONVOLUTION
-        #batch = batch.unsqueeze(1)
-        #batch = self.conv_block(batch)  # [B, n_chan, T]
-        #batch = batch.transpose(1,2)
-
         batch = input # [B, M, T]
         for ii in range(self.n_layers):
             batch = self.blocks[ii](batch)  # [B, -1, T]
-
         batch = self.normalize_batch(batch,input)
-
         return batch
 
     def normalize_batch(self, batch, input, eps=1e-8):
@@ -227,38 +304,6 @@ class JustMamba2(BaseModel):
             
         return batch
     
-    def peak_normalize(batch: torch.Tensor, target_peak: float = 1.0) -> torch.Tensor:
-        """
-        Peak normalizes a batch of audio tensors.
-
-        Args:
-            batch (torch.Tensor): Batch of audio tensors of shape (B, C, T) or (B, T), 
-                                where B is batch size, C is number of channels, T is the number of samples.
-            target_peak (float): Desired peak value (e.g., 1.0 or -1.0).
-
-        Returns:
-            torch.Tensor: Peak-normalized batch of audio tensors.
-        """
-        # Ensure target_peak is positive
-        target_peak = abs(target_peak)
-
-        # Compute the peak (max absolute value) for each audio sample
-        max_vals = batch.abs().flatten(start_dim=1).max(dim=1).values  # Shape: (B,)
-
-        # Avoid division by zero by adding a small epsilon
-        max_vals = max_vals.clamp(min=1e-8)
-
-        # Reshape for broadcasting (B, 1, 1) if 3D, (B, 1) if 2D
-        if batch.dim() == 3:
-            max_vals = max_vals[:, None, None]
-        else:
-            max_vals = max_vals[:, None]
-
-        # Scale the batch to the target peak
-        normalized_batch = (batch / max_vals) * target_peak
-
-        return normalized_batch
-
     @staticmethod
     def pad2(input_tensor, target_len):
         input_tensor = torch.nn.functional.pad(
@@ -269,49 +314,3 @@ class JustMamba2(BaseModel):
     def get_model_args(self):
         model_args = {"n_sample_rate": 2}
 
-
-class LayerNormalization4D(nn.Module):
-    def __init__(self, input_dimension, eps=1e-5):
-        super().__init__()
-        param_size = [1, input_dimension, 1, 1]
-        self.gamma = Parameter(torch.Tensor(*param_size).to(torch.float32))
-        self.beta = Parameter(torch.Tensor(*param_size).to(torch.float32))
-        init.ones_(self.gamma)
-        init.zeros_(self.beta)
-        self.eps = eps
-
-    def forward(self, x):
-        if x.ndim == 4:
-            _, C, _, _ = x.shape
-            stat_dim = (1,)
-        else:
-            raise ValueError("Expect x to have 4 dimensions, but got {}".format(x.ndim))
-        mu_ = x.mean(dim=stat_dim, keepdim=True)  # [B,1,T,F]
-        std_ = torch.sqrt(
-            x.var(dim=stat_dim, unbiased=False, keepdim=True) + self.eps
-        )  # [B,1,T,F]
-        x_hat = ((x - mu_) / std_) * self.gamma + self.beta
-        return x_hat
-
-class LayerNormalization4DCF(nn.Module):
-    def __init__(self, input_dimension, eps=1e-5):
-        super().__init__()
-        assert len(input_dimension) == 2
-        param_size = [1, input_dimension[0], 1, input_dimension[1]]
-        self.gamma = Parameter(torch.Tensor(*param_size).to(torch.float32))
-        self.beta = Parameter(torch.Tensor(*param_size).to(torch.float32))
-        init.ones_(self.gamma)
-        init.zeros_(self.beta)
-        self.eps = eps
-
-    def forward(self, x):
-        if x.ndim == 4:
-            stat_dim = (1, 3)
-        else:
-            raise ValueError("Expect x to have 4 dimensions, but got {}".format(x.ndim))
-        mu_ = x.mean(dim=stat_dim, keepdim=True)  # [B,1,T,1]
-        std_ = torch.sqrt(
-            x.var(dim=stat_dim, unbiased=False, keepdim=True) + self.eps
-        )  # [B,1,T,F]
-        x_hat = ((x - mu_) / std_) * self.gamma + self.beta
-        return x_hat

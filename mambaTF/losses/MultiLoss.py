@@ -9,18 +9,19 @@ from matplotlib import pyplot as plt
 import soundfile as sf
 import numpy as np
 import librosa
+import torch.nn.functional as F
 
 class MultiLoss(_Loss):
     """
     Computes the L1 loss between the Mel-spectrograms of the estimated and target signals.
     """
 
-    def __init__(self,k_mel=1, k_mae=0, k_stft=0, k_snr=0, sample_rate=8000, n_fft=1024, hop_length=320, n_mels=1280, normalized = True,reduction='mean', eps=1e-10, stereo=False):
+    def __init__(self,k_mel=1, k_mae=0, k_stft=0, k_rms=0, sample_rate=8000, n_fft=1024, hop_length=320, n_mels=1280, normalized = True,reduction='mean', eps=1e-10, stereo=False):
         super().__init__(reduction=reduction)
         self.k_mel = k_mel
         self.k_mae = k_mae
         self.k_stft = k_stft
-        self.k_snr = k_snr
+        self.k_rms = k_rms
         self.sample_rate = sample_rate
         self.n_fft = n_fft
         self.hop_length = hop_length
@@ -35,6 +36,7 @@ class MultiLoss(_Loss):
             torchaudio.transforms.MelSpectrogram(
                 sample_rate=sample_rate,
                 n_fft=n_fft,
+                f_min=100,
                 hop_length=hop_length,
                 n_mels=n_mels,
                 power=1.0  # Use magnitude instead of power
@@ -70,15 +72,15 @@ class MultiLoss(_Loss):
             ests = self.peak_normalize(ests)
             targets = self.peak_normalize(targets)
 
-            #lest_mel =  torch.log(est_mel+self.eps)
-            #ltrg_mel =  torch.log(target_mel+self.eps)
+            #lest_mel = torch.log(est_mel+self.eps)
+            #ltrg_mel = torch.log(target_mel+self.eps)
             #lest_mel = self.peak_normalize(lest_mel)
             #ltrg_mel = self.peak_normalize(ltrg_mel)
 
             MAEloss = 0
             MELloss = 0
             STFTloss = 0
-            SNRLoss = 0
+            RMSLoss = 0
             
             if self.k_mae > 0:
                 MAEloss = self.l1_loss(ests, targets)
@@ -89,14 +91,14 @@ class MultiLoss(_Loss):
                 est_mel = self.mel_spectrogram(ests)
                 target_mel = self.mel_spectrogram(targets)
                 MELloss = nn.functional.l1_loss(est_mel, target_mel, reduction=self.reduction)
+        
+            if self.k_rms > 0:
+                ests_rms = self.rms_envelope(ests[:,0,:])
+                trg_rms = self.rms_envelope(targets[:,0,:])
+                RMSLoss = nn.functional.l1_loss(ests_rms, trg_rms, reduction=self.reduction)
+            #print(str(MAEloss)+" "+str(STFTloss)+" "+str(MELloss)+" "+str(RMSLoss))
 
-            if self.k_snr > 0:
-                snr_loss_fn = auraloss.time.SNRLoss()  # Instantiate the SNRLoss class
-                SNRLoss = snr_loss_fn(ests, targets)  # Apply it to the inputs
-
-            #print(str(MAEloss)+" "+str(STFTloss)+" "+str(MELloss)+" "+str(SNRLoss))
-
-            return self.k_mel*MELloss + self.k_mae*MAEloss + self.k_stft*STFTloss/8 + self.k_snr*SNRLoss/8
+            return self.k_mel*MELloss + self.k_mae*MAEloss + self.k_stft*STFTloss/8 + self.k_rms*RMSLoss
     
     def print_mel(self, input, sr): 
         input = input.astype(np.float32)/ 32768.0
@@ -112,19 +114,41 @@ class MultiLoss(_Loss):
         plt.savefig("/nas/home/gfraticcioli/projects/MambaTransfer/temp/mel.png", dpi=300, bbox_inches='tight')
         plt.show()
     
-    def peak_normalize(self,input): 
+    def peak_normalize(self, input): 
         i_min = input.min()
         i_max = input.max()
         if i_min != i_max: 
             return (input - i_min) / (i_max - i_min)
         else :
             return input
+    
+    def rms_envelope(self, audio, frame_size=1024, hop_size=512, eps=1e-8):
+        # Number of frames
+        batch_size, num_samples = audio.shape
+        num_frames = (num_samples - frame_size) // hop_size + 1
+
+        # Create a window function
+        window = torch.hann_window(frame_size).to(audio.device)  # Smooth window
+        
+        # Frame the signal and apply the window
+        frames = F.unfold(
+            audio.unsqueeze(1),  # Add channel dimension for unfold
+            kernel_size=(1, frame_size),
+            stride=(1, hop_size)
+        ).squeeze(1)  # Remove channel dimension
+        
+        frames = frames.reshape(batch_size, frame_size, num_frames)  # Reshape to [B, frame_size, num_frames]
+        windowed_frames = frames * window[:, None]  # Apply window
+
+        # Compute RMS for each frame
+        rms = torch.sqrt(torch.mean(windowed_frames**2, dim=1) + eps)  # Shape: [B, num_frames]
+        return rms
 
         
 if __name__ == "__main__":
     #MMLoss = MelMAESpectrogramLoss(k_mae=1,k_stft=0).cpu()
     #print(MMLoss(torch.rand(1,60000).cpu(), torch.rand(1,60000).cpu()))
     MMLoss =  MultiLoss(k_mel=1,k_stft=0,sample_rate=32000,n_mels=600, n_fft=16384).cpu()
-    audio, sr = sf.read("/nas/home/gfraticcioli/projects/MambaTransfer/temp/individualAudio3.wav",start=0, stop=None ,dtype="int16")
+    audio, sr = sf.read("temp/trg.wav",start=0, stop=None ,dtype="int16")
     
     MMLoss.print_mel(audio, sr)

@@ -19,21 +19,74 @@ from .base_model import BaseModel
 
 from functools import partial
 
-
-# from mamba_ssm.modules.mamba_simple import Mamba
-# from mamba_ssm.modules.mamba_simple import Block
-# from mamba_ssm.models.mixer_seq_simple import _init_weights
-# from mamba_ssm.ops.triton.layernorm import RMSNorm #-> torch 2.0.0
-
-#EULER
-#from mamba_ssm.modules.mamba2_simple import Mamba2Simple
-from mamba_ssm.modules.mamba2 import Mamba2
 from mamba_ssm.modules.mamba_simple import Mamba
 from mamba_ssm.modules.block import Block
 from mamba_ssm.models.mixer_seq_simple import _init_weights
 from mamba_ssm.ops.triton.layer_norm import RMSNorm #-> torch 2.0.0
 
-class MambaBlock(nn.Module):
+class DoubleConv(nn.Module):
+    """(convolution => [BN] => ReLU) * 2"""
+    def __init__(self, in_channels, out_channels):
+        super(DoubleConv, self).__init__()
+        self.double_conv = nn.Sequential(
+            nn.Conv1d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm1d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv1d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm1d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+        
+    def forward(self, x):
+        return self.double_conv(x)
+
+class Down(nn.Module):
+    """Downscaling with maxpool then double conv"""
+    def __init__(self, in_channels, out_channels):
+        super(Down, self).__init__()
+        self.maxpool_conv = nn.Sequential(
+            nn.MaxPool1d(kernel_size=2),
+            DoubleConv(in_channels, out_channels)
+        )
+        
+    def forward(self, x):
+        return self.maxpool_conv(x)
+
+class Up(nn.Module):
+    """Upscaling then double conv. Uses bilinear upsampling by default."""
+    def __init__(self, in_channels, out_channels, bilinear=True):
+        super(Up, self).__init__()
+        if bilinear:
+            self.up = nn.Upsample(scale_factor=2, mode='linear', align_corners=True)
+        else:
+            # Use transposed convolution
+            self.up = nn.ConvTranspose1d(in_channels // 2, in_channels // 2, kernel_size=2, stride=2)
+        self.conv = DoubleConv(in_channels, out_channels)
+    
+    def forward(self, x1, x2):
+        # x1 is from the decoder (to be upsampled)
+        # x2 is the corresponding skip connection from the encoder
+        x1 = self.up(x1)
+        # Pad x1 if necessary to match x2's length (handle odd dimensions)
+        diff = x2.size(2) - x1.size(2)
+        if diff > 0:
+            x1 = F.pad(x1, (diff // 2, diff - diff // 2))
+        elif diff < 0:
+            x2 = F.pad(x2, (-diff // 2, -diff - (-diff) // 2))
+        # Concatenate along the channel dimension
+        x = torch.cat([x2, x1], dim=1)
+        return self.conv(x)
+
+class OutConv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(OutConv, self).__init__()
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size=1)
+    
+    def forward(self, x):
+        return self.conv(x)
+
+
+class MambaCBlock(nn.Module):
     def __init__(self,
                  length,
                  dim,
@@ -42,31 +95,19 @@ class MambaBlock(nn.Module):
                  eps=1e-5,
                  headdim=64,
                  expand=4,
-                 n_layer=1,
+                 n_mamba=1,
                  bidirectional=False):
-        super(MambaBlock, self).__init__()
+        super(MambaCBlock, self).__init__()
 
-        #self.in_channels = dim 
-        # in_channels = 1
-
-        #self.norm = LayerNormalization4D(dim, eps=eps)
         self.dim = dim
         self.length = length
         self.hop = hop # 0.0 - 1.0
         self.eps = eps
-        self.n_layer = n_layer
+        self.n_mamba = n_mamba
         self.bidirectional = bidirectional
-        self.swap_DL = swap_DL
 
-        self.linear = nn.ConvTranspose1d(self.dim * 2, 1, dim, stride=1, padding=1)
-        self.linear_proj = nn.Linear(1, dim)
-        self.linear_reproject = nn.Linear(dim, 1)
-
-        # assert self.d_inner % self.headdim == 0
-        # self.d_inner = self.expand * self.d_model
-        # causal conv 1d  stride rule -> -> d_model * expand / headdim = multiple of 8
         self.forward_blocks = nn.ModuleList([])
-        for i in range(n_layer):
+        for i in range(n_mamba):
             self.forward_blocks.append(
                 Block(
                     dim=self.dim,
@@ -81,7 +122,7 @@ class MambaBlock(nn.Module):
         self.backward_blocks = None
         if bidirectional:
             self.backward_blocks = nn.ModuleList([])
-            for i in range(n_layer):
+            for i in range(n_mamba):
                 self.backward_blocks.append(
                         Block(
                         dim=self.dim,
@@ -94,7 +135,90 @@ class MambaBlock(nn.Module):
                     )
                 )
 
-        self.apply(partial(_init_weights, n_layer=n_layer))
+        bilinear=True
+        # Encoder: Each "Down" halves the time resolution.
+        self.inc = DoubleConv(1, 64)        # [B, 64, 12288] - [B, 64, 4096]
+        self.down1 = Down(64, 128)                    # [B, 128, 6144] - [B, 64, 2048]
+        self.down2 = Down(128, 256)                   # [B, 256, 3072] - [B, 64, 1024]
+        self.down3 = Down(256, 512)                   # [B, 512, 1536] - [B, 64, 512]
+        factor = 2 if bilinear else 1
+        # self.down4 = Down(512, 1024 // factor)        # [B, 1024//factor, 768] - [B, 64, 256]
+
+        # # Decoder: Upsample step by step and concatena skip connections.
+        # self.up1 = Up(1024, 512 // factor, bilinear)    # output: [B, 512//factor, 1536] - [B, 512//factor, 512]
+
+        # Modified bottleneck: from 512 to 4096 channels (length becomes 256)
+        self.down4 = Down(512, 4096)                   # [B, 4096, 256]
+
+        # Decoder path
+        # For the first Up, the input channels equals the concatenation of x5 (4096) and skip x4 (512) → 4608 channels.
+        self.up1 = Up(4608, 512, bilinear)   
+        self.up2 = Up(512, 256 , bilinear)     # output: [B, 256//factor, 3072] - [B, 256//factor, 1024]
+        self.up3 = Up(256, 128 , bilinear)     # output: [B, 128//factor, 6144] - [B, 128//factor, 2048]
+        self.up4 = Up(128, 64, bilinear)                # output: [B, 64, 12288] - [B, 64//factor, 4096]
+        self.outc = OutConv(64, 1)           # final output: [B, out_channels, 12288] - [B, out_channels, 512]
+    
+        '''
+        # # Encoder
+        # self.encoder = nn.Sequential(
+        #     nn.Conv1d(in_channels=1, out_channels=2048, kernel_size=8, stride=2, padding=3),  # (B, 2048, 2048)
+        #     nn.BatchNorm1d(2048),
+        #     nn.ReLU(),
+        #     nn.Conv1d(in_channels=2048, out_channels=4096, kernel_size=8, stride=2, padding=3),  # (B, 4096, 1024)
+        #     nn.BatchNorm1d(4096),
+        #     nn.ReLU(),
+        # )
+
+        # # Decoder
+        # self.decoder = nn.Sequential(
+        #     nn.ConvTranspose1d(in_channels=4096, out_channels=2048, kernel_size=8, stride=2, padding=3, output_padding=0),  # (B, 2048, 2048)
+        #     nn.BatchNorm1d(2048),
+        #     nn.ReLU(),
+        #     nn.ConvTranspose1d(in_channels=2048, out_channels=1, kernel_size=8, stride=2, padding=3, output_padding=0),  # (B, 1, 4096)
+        # )
+
+
+        # # Single-layer Encoder (Downsampling)
+        # self.encoder = nn.Sequential(
+        #     nn.Conv1d(in_channels=1, out_channels=4096, kernel_size=1)
+        # )
+
+        # # Single-layer Decoder (Upsampling)
+        # self.decoder = nn.Sequential(
+        #     nn.Conv1d(in_channels=4096, out_channels=1, kernel_size=1)
+        # )
+                
+        # self.encoder = nn.Sequential(
+        #     nn.Conv1d(in_channels=1, out_channels=1024, kernel_size=8, stride=4, padding=2),  # (B, 1024, 3072)
+        #     nn.BatchNorm1d(1024),  # Normalize over channels
+        #     nn.ReLU(),
+        #     nn.Conv1d(in_channels=1024, out_channels=2048, kernel_size=8, stride=4, padding=2),  # (B, 2048, 768)
+        #     nn.BatchNorm1d(2048),  # Normalize over channels
+        #     nn.ReLU(),
+        #     nn.Conv1d(in_channels=2048, out_channels=4096, kernel_size=8, stride=2, padding=2),  # (B, 4096, 384)
+        #     nn.BatchNorm1d(4096),  # Normalize over channels
+        #     nn.ReLU()
+        # )
+
+        # # Decoder
+        # self.decoder = nn.Sequential(
+        #     nn.ConvTranspose1d(in_channels=4096, out_channels=2048, kernel_size=8, stride=2, padding=2, output_padding=0),  # (B, 2048, 768)
+        #     nn.BatchNorm1d(2048),
+        #     nn.ReLU(),
+        #     nn.ConvTranspose1d(in_channels=2048, out_channels=1024, kernel_size=8, stride=4, padding=2, output_padding=0),  # (B, 1024, 3072)
+        #     nn.BatchNorm1d(1024),
+        #     nn.ReLU(),
+        #     nn.ConvTranspose1d(in_channels=1024, out_channels=1, kernel_size=8, stride=4, padding=2, output_padding=0),  # (B, 1, 12288)
+        #     #nn.Tanh()  # Output between -1 and 1
+        #     #nn.ReLU()
+        # )
+
+        # assert self.d_inner % self.headdim == 0
+        # self.d_inner = self.expand * self.d_model
+        # causal conv 1d  stride rule -> -> d_model * expand / headdim = multiple of 8
+        '''
+        
+        self.apply(partial(_init_weights, n_layer=n_mamba))
 
     def forward(self, x):
 
@@ -102,13 +226,20 @@ class MambaBlock(nn.Module):
         # [B,T]
         input_ = x
         B, T = input_.shape
-        batch = input_
-       
-        batch = batch.unfold(1, self.dim, int(self.dim*self.hop)) # [B, n, T]
+        batch = input_.unsqueeze(1)  # [B, 1, T]
+        
+        batch = batch + 1 # DC OFFSET
+        #batch = self.encoder(batch)  # [B, C, T]
 
-        #batch = self.norm(input_)  # [B, C, T]
+        x1 = self.inc(batch)       # [B, 64, 12288]
+        x2 = self.down1(x1)    # [B, 128, 6144]
+        x3 = self.down2(x2)    # [B, 256, 3072]
+        x4 = self.down3(x3)    # [B, 512, 1536]
+        x5 = self.down4(x4)    # [B, 1024//factor, 768]
+
+        batch = x5
         # Expects input [B, T, C] where C = embeddings channels
-
+        batch = batch.transpose(1,2)  # [B, T, C]
         for_residual = None
         forward_f = batch.clone()
         for block in self.forward_blocks:
@@ -125,33 +256,28 @@ class MambaBlock(nn.Module):
             back_residual = torch.flip(back_residual, [1])
             residual = (residual + back_residual) / 2  # Media delle due direzioni
             #residual = torch.cat([residual, back_residual], -1)
-            #residual = residual.transpose(1, 2)  # [B, H, -1]
-            #residual = self.linear(residual)  # [B, C, T]
-
-        #residual = residual.view([B, C, T])
-        if self.hop<1: 
-            #residual = residual.flatten(start_dim=1)
-            # Step 1: Create a triangular window of size 4096
-            triangular_window = torch.linspace(0, 1, int(self.dim/2))  # First half of the triangle
-            triangular_window = torch.cat((triangular_window, torch.linspace(1, 0, int(self.dim/2)))) # Second half of the triangle
-            triangular_window = triangular_window.unsqueeze(0).unsqueeze(0)  # [1, 1, 4096]
-            triangular_window = triangular_window.expand(residual.size(0), residual.size(1), -1).to(residual.device)  # [1, 15, 4096]
-            residual = residual * triangular_window
-            
-        residual = F.fold(
-            residual.permute(0,2,1),
-            output_size=(1, T),
-            kernel_size=(1, self.dim),
-            stride=(1, int(self.dim*self.hop))
-            )
-        residual = residual[:,0,0,:]
+            #residual = residual.transpose(1, 2)  # [B, H, -1]mambaTF/models/JustMamba2.py
         
-        out = residual #+ input_  # [B, C, T]
+        residual = residual.transpose(1, 2)  # [B, T, H]
+        
+        x5 = residual 
+        x = self.up1(x5, x4)   # [B, 512//factor, 1536]
+        x = self.up2(x, x3)    # [B, 256//factor, 3072]
+        x = self.up3(x, x2)    # [B, 128//factor, 6144]
+        x = self.up4(x, x1)    # [B, 64, 12288]
+        logits = self.outc(x)  # [B, out_channels, 12288]
+
+        #residual = self.decoder(residual)  # [B, 1, T]
+
+        logits = logits - 1 # DC OFFSET
+
+        out = logits[:,0,:]
+        #out = residual #+ input_  # [B, C, T]
 
         return out
         #
 
-class JustMamba2(BaseModel):
+class MambaCoder(BaseModel):
     def __init__(
         self,
         dim,
@@ -161,26 +287,28 @@ class JustMamba2(BaseModel):
         expand=2,
         swap_DL=True,
         n_layers=1,
+        n_mamba=1,
         eps=1.0e-5,
         bidirectional = False,
         sample_rate=32000
     ):
         super().__init__(sample_rate)
         self.n_layers = n_layers
+        self.n_mamba = n_mamba
         self.bidirectional = bidirectional
 
         self.eps = eps
         self.blocks = nn.ModuleList([])
         for _ in range(n_layers):
             self.blocks.append(
-                MambaBlock(
+                MambaCBlock(
                     dim = dim,
                     length = length,
                     hop = hop,
                     headdim=headdim,
                     expand=expand,
                     eps = eps,
-                    n_layer=1,
+                    n_mamba=self.n_mamba,
                     swap_DL=swap_DL,
                     bidirectional=self.bidirectional),
                 )
@@ -192,7 +320,6 @@ class JustMamba2(BaseModel):
 
 
         n_samples = input.shape[1] # [B,T]
-
         batch = input
 
         # EMBEDDING CONVOLUTION
@@ -269,7 +396,6 @@ class JustMamba2(BaseModel):
     def get_model_args(self):
         model_args = {"n_sample_rate": 2}
 
-
 class LayerNormalization4D(nn.Module):
     def __init__(self, input_dimension, eps=1e-5):
         super().__init__()
@@ -292,6 +418,7 @@ class LayerNormalization4D(nn.Module):
         )  # [B,1,T,F]
         x_hat = ((x - mu_) / std_) * self.gamma + self.beta
         return x_hat
+
 
 class LayerNormalization4DCF(nn.Module):
     def __init__(self, input_dimension, eps=1e-5):

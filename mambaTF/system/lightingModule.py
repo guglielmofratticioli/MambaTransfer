@@ -51,6 +51,7 @@ class AudioLightningModule(pl.LightningModule):
         self.optimizer = optimizer
         self.loss_func = loss_func
         self.train_loader = train_loader
+        self.learning_rate = 0.00001
         self.val_loader = val_loader
         self.test_loader = test_loader
         self.scheduler = scheduler
@@ -71,7 +72,6 @@ class AudioLightningModule(pl.LightningModule):
 
     def forward(self, wav, mouth=None):
         """Applies forward pass of the model.
-
         
         Returns:
             :class:`torch.Tensor`
@@ -90,8 +90,6 @@ class AudioLightningModule(pl.LightningModule):
 
             # Calculate mean and std for sources
             data_stds.append(sources.std().item())
-
-
 
     def setup(self, stage=None):
         # Log training dataset statistics
@@ -171,7 +169,7 @@ class AudioLightningModule(pl.LightningModule):
                 )
                 self.validation_step_outputs.append(loss)
 
-                if batch_nb % 10 == 0:
+                if batch_nb % 20 == 0:
                     input_audio = sources[0]
                     target_audio = targets[0]
                     output_audio = est_targets[0]
@@ -266,24 +264,16 @@ class AudioLightningModule(pl.LightningModule):
         pass
 
     def on_validation_epoch_end(self): 
-        #print('validation ended')
-        pass
-        #self.log_waveforms(self.val_loader, split='val')
-        # val
-       
-        #self.log(
-        #    "lr",
-        #    self.optimizer.param_groups[0]["lr"],
-        #    on_epoch=True,
-        #    prog_bar=True,
-        #    sync_dist=True,
-        #)
-        #self.logger.experiment.add_scalar(
-        #    "learning_rate", self.optimizer.param_groups[0]["lr"], self.current_epoch
-        #)
-
-        #self.validation_step_outputs.clear()  # free memory
-        #self.test_step_outputs.clear()  # free memory
+        self.log(
+           "lr",
+           self.optimizer.param_groups[0]["lr"],
+           on_epoch=True,
+           prog_bar=True,
+           sync_dist=True,
+        )
+        self.logger.experiment.add_scalar(
+           "learning_rate", self.optimizer.param_groups[0]["lr"], self.current_epoch
+        )
 
     def configure_optimizers(self):
         """Initialize optimizers, batch-wise and epoch-wise schedulers."""
@@ -331,9 +321,6 @@ class AudioLightningModule(pl.LightningModule):
     #     #checkpoint["training_config"] = self.config
     #     #return checkpoint
     #     return 
-
-
-
     @staticmethod
     def config_to_hparams(dic):
         """Sanitizes the config dict to be handled correctly by torch
@@ -353,3 +340,205 @@ class AudioLightningModule(pl.LightningModule):
             elif isinstance(v, (list, tuple)):
                 dic[k] = torch.tensor(v)
         return dic
+    
+
+class CombinedLightningModule(pl.LightningModule):
+    def __init__(
+        self,
+        frozen_model: torch.nn.Module,
+        new_network: torch.nn.Module,
+        loss_func: dict,
+        optimizer_config: dict,
+        scheduler_config: dict = None,
+        train_loader = None,
+        val_loader = None,
+        test_loader = None,
+        sr: int = 44100,
+        config: dict = None,
+    ):
+        super().__init__()
+        # Model components
+        self.frozen_model = frozen_model
+        self.new_network = new_network
+        
+        # Freeze the pretrained model
+        for param in self.frozen_model.parameters():
+            param.requires_grad = False
+        self.frozen_model.eval()
+
+        # Training components
+        self.loss_func = loss_func
+        self.optimizer_config = optimizer_config
+        self.scheduler_config = scheduler_config
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.test_loader = test_loader
+        
+        # Configuration
+        self.sr = sr
+        self.config = config or {}
+        self.validation_step_outputs = []
+        self.test_step_outputs = []
+
+    def forward(self, x):
+        """Forward pass through both models"""
+        with torch.no_grad():
+            frozen_out = self.frozen_model(x)
+        return self.new_network(frozen_out), frozen_out
+
+    def training_step(self, batch, batch_idx):
+        sources, targets, _ = batch
+        
+        # Apply speed augmentation if configured
+        if self.config.get("SpeedAug", False):
+            sources, targets = self._apply_speed_aug(sources, targets)
+        
+        # Forward pass
+        new_out, frozen_out = self(sources)
+        loss = self.loss_func['train'](new_out, targets)
+
+        # Logging
+        self.log("train_loss", loss, prog_bar=True, sync_dist=True)
+        
+        # Optional: Log training audio samples periodically
+        if batch_idx % 100 == 0:
+            self._log_audio_samples(sources, new_out, frozen_out, targets, "train", batch_idx)
+            
+        return loss
+
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        sources, targets, _ = batch
+        new_out, frozen_out = self(sources)
+        
+        # Calculate losses
+        val_loss = self.loss_func['val'](new_out, targets)
+        frozen_loss = self.loss_func['val'](frozen_out, targets)
+
+        # Logging
+        self.log("val/new_loss", val_loss, prog_bar=True, sync_dist=True)
+        self.log("val/frozen_loss", frozen_loss, sync_dist=True)
+        
+        # Log audio samples for first validation loader
+        if dataloader_idx == 0 and batch_idx % 10 == 0:
+            self._log_audio_samples(sources, new_out, frozen_out, targets, "val", batch_idx)
+
+        return {"val_loss": val_loss, "frozen_loss": frozen_loss}
+
+    def test_step(self, batch, batch_idx):
+        sources, targets, _ = batch
+        new_out, frozen_out = self(sources)
+        
+        # Calculate and log losses
+        test_loss = self.loss_func['val'](new_out, targets)
+        frozen_test_loss = self.loss_func['val'](frozen_out, targets)
+        
+        self.log("test/new_loss", test_loss, sync_dist=True)
+        self.log("test/frozen_loss", frozen_test_loss, sync_dist=True)
+        
+        # Log audio samples
+        if batch_idx % 10 == 0:
+            self._log_audio_samples(sources, new_out, frozen_out, targets, "test", batch_idx)
+            
+        return {"test_loss": test_loss, "frozen_test_loss": frozen_test_loss}
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(
+            self.new_network.parameters(), 
+            **self.optimizer_config
+        )
+        
+        if not self.scheduler_config:
+            return optimizer
+            
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            **self.scheduler_config
+        )
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val/new_loss",
+                "interval": "epoch",
+                "frequency": 1
+            }
+        }
+
+    def _log_audio_samples(self, sources, new_out, frozen_out, targets, split, batch_idx):
+        """Helper method to log audio samples from all stages"""
+        idx = 0  # Log first sample in batch
+        
+        # Log original input
+        self.logger.experiment.add_audio(
+            f"{split}/input_{batch_idx}", 
+            sources[idx], 
+            self.current_epoch, 
+            sample_rate=self.sr
+        )
+        
+        # Log frozen model output
+        self.logger.experiment.add_audio(
+            f"{split}/frozen_out_{batch_idx}", 
+            frozen_out[idx], 
+            self.current_epoch, 
+            sample_rate=self.sr
+        )
+        
+        # Log new network output
+        self.logger.experiment.add_audio(
+            f"{split}/new_out_{batch_idx}", 
+            new_out[idx], 
+            self.current_epoch, 
+            sample_rate=self.sr
+        )
+        
+        # Log target
+        self.logger.experiment.add_audio(
+            f"{split}/target_{batch_idx}", 
+            targets[idx], 
+            self.current_epoch, 
+            sample_rate=self.sr
+        )
+
+    def _apply_speed_aug(self, sources, targets):
+        """Speed augmentation implementation"""
+        # Add your speed perturbation implementation here
+        # Return augmented sources and targets
+        return sources, targets
+
+    # DataLoader methods
+    def train_dataloader(self):
+        return self.train_loader
+
+    def val_dataloader(self):
+        return [self.val_loader, self.test_loader]  # Maintain multiple val loaders
+
+    def test_dataloader(self):
+        return self.test_loader
+        # Clear stored outputs after epoch
+        self.frozen_outputs.clear()
+        super().on_test_epoch_end()
+        """Helper method for logging audio examples"""
+        input_audio = sources[0]
+        target_audio = targets[0]
+        output_audio = est_targets[0]
+        
+        self.logger.experiment.add_audio(
+            f'{split}/input/batch_{batch_nb}/channel_0',
+            input_audio,
+            self.current_epoch,
+            sample_rate=self.sr
+        )
+        self.logger.experiment.add_audio(
+            f'{split}/output/batch_{batch_nb}/channel_0',
+            output_audio,
+            self.current_epoch,
+            sample_rate=self.sr
+        )
+        self.logger.experiment.add_audio(
+            f'{split}/target/batch_{batch_nb}/channel_0',
+            target_audio,
+            self.current_epoch,
+            sample_rate=self.sr
+        )
