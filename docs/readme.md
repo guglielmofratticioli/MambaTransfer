@@ -2,6 +2,5 @@
 
 ## Audio examples 
 
-Audio files are hosted in the projects webpage 
-
-!()[https://guglielmofratticioli.github.io/MambaTransfer/]
+Audio files are hosted at the projects webpage:
+https://guglielmofratticioli.github.io/MambaTransfer/
