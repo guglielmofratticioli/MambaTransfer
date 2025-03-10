@@ -1,5 +1,5 @@
 ---
-title: DiffTransfer
+title: MambaTransfer
 ---
 
 
