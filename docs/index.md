@@ -7,7 +7,7 @@ title: MambaTransfer
 Clarinet to Strings
 
 |Name| Input Clarinet  |  MambaTransfer (HOP = 0.5) | MambaTransfer (HOP = 1) | Universal Network| Ground Truth Strings|
-|---|---|---|---|---|
+|---|---|---|---|---|---|
 | Pirates of The Carribean | 
 <audio controls style="width: 100px;"><source src="audio/music_star_test/001.1.mp3" type="audio/mpeg"></audio>  | 
 <audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/001.4.mp3" type="audio/mpeg"></audio>  |  
@@ -29,8 +29,8 @@ Clarinet to Strings
 
 Vibraphone to Piano
 
-|Name| Input Vibraphone  |  MambaTransfer (HOP = 0.5) | Universal Network| Ground Truth Piano|
-|---|---|---|---|---|
+|Name| Input Vibraphone  |  MambaTransfer (HOP = 0.5) | MambaTransfer (HOP = 1)  | Universal Network| Ground Truth Piano|
+|---|---|---|---|---|---|
 | Pirates of The Carribean | 
 <audio controls style="width: 100px;"><source src="audio/music_star_test/001.2.mp3" type="audio/mpeg"></audio>  | 
 <audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/001.5.mp3" type="audio/mpeg"></audio>  |  
@@ -54,8 +54,8 @@ Vibraphone to Piano
 
 Strings to Clarinet
 
-|Name| Input Strings  |  MambaTransfer (HOP = 0.5) | Universal Network| Ground Truth Clarinet|
-|---|---|---|---|---|
+|Name| Input Strings  |  MambaTransfer (HOP = 0.5) |  MambaTransfer (HOP = 1)  | Universal Network| Ground Truth Clarinet|
+|---|---|---|---|---|---|
 | Pirates of The Carribean | 
 <audio controls style="width: 100px;"><source src="audio/music_star_test/001.4.mp3" type="audio/mpeg"></audio>| 
 <audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/001.1.mp3" type="audio/mpeg"></audio>  |  
@@ -77,8 +77,8 @@ Strings to Clarinet
 
 Piano to Vibraphone
 
-|Name| Input Piano  |  MambaTransfer (HOP = 0.5) | Universal Network| Ground Truth Vibraphone|
-|---|---|---|---|---|
+|Name| Input Piano  |  MambaTransfer (HOP = 0.5) |  MambaTransfer (HOP = 1) | Universal Network| Ground Truth Vibraphone|
+|---|---|---|---|---|---|
 | Pirates of The Carribean | 
 <audio controls style="width: 100px;"><source src="audio/music_star_test/001.5.mp3" type="audio/mpeg"></audio>| 
 <audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/001.2.mp3" type="audio/mpeg"></audio>  |  
