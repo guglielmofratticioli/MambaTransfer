@@ -2,51 +2,98 @@
 title: MambaTransfer
 ---
 
-
-# Multi Instrument timbre transfer (mixture)
-
-## Clarinet/Vibraphone to Piano/Strings
-
-|Name| Input Mixture  |  DiffTransfer | Music-STAR| Ground Truth|
-|---|---|---|---|---|
-| Pirates of The Carribean | <audio controls style="width: 100px;"><source src="audio/music_star_test/001.0.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/mixture_model/001.3.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/mixture_model/001.3.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/001.3.wav" type="audio/mpeg"></audio> |
-| My Heart Will Go On | <audio controls style="width: 100px;"><source src="audio/music_star_test/002.0.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/mixture_model/002.3.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/mixture_model/002.3.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/002.3.wav" type="audio/mpeg"></audio> |
-| Beethoven's String | <audio controls style="width: 100px;"><source src="audio/music_star_test/003.0.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/mixture_model/003.3.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/mixture_model/003.3.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/003.3.wav" type="audio/mpeg"></audio> |
-
-
-## Piano/Strings to Clarinet/Vibraphone 
-
-|Name| Input Mixture  |  DiffTransfer | Music-STAR| Ground Truth|
-|---|---|---|---|---|
-| Pirates of The Carribean | <audio controls style="width: 100px;"><source src="audio/music_star_test/001.3.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/mixture_model/001.0.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/mixture_model/001.0.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/001.0.wav" type="audio/mpeg"></audio> |
-| My Heart Will Go On | <audio controls style="width: 100px;"><source src="audio/music_star_test/002.3.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/mixture_model/002.0.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/mixture_model/002.0.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/002.0.wav" type="audio/mpeg"></audio> |
-| Beethoven's String | <audio controls style="width: 100px;"><source src="audio/music_star_test/003.3.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/mixture_model/003.0.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/mixture_model/003.0.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/003.0.wav" type="audio/mpeg"></audio> |
-
-# Multi Instrument timbre transfer (single and single/mix)
-
-## Clarinet/Vibraphone to Strings/Piano
+## Clarinet/Vibraphone to Strings/Piano 
 
 Clarinet to Strings
 
-|Name| Input Clarinet  |  DiffTransfer | Universal Network| Ground Truth Strings|
+|Name| Input Clarinet  |  MambaTransfer (HOP = 0.5) | MambaTransfer (HOP = 1) | Universal Network| Ground Truth Strings|
 |---|---|---|---|---|
-| Pirates of The Carribean | <audio controls style="width: 100px;"><source src="audio/music_star_test/001.1.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/separate_model_individual_tracks/001.4.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/001.4.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/001.4.wav" type="audio/mpeg"></audio>|
-| My Heart Will Go On | <audio controls style="width: 100px;"><source src="audio/music_star_test/002.1.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/separate_model_individual_tracks/002.4.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/002.4.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/002.4.wav" type="audio/mpeg"></audio>|
-| Beethoven's String | <audio controls style="width: 100px;"><source src="audio/music_star_test/003.1.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/separate_model_individual_tracks/003.4.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/003.4.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/003.4.wav" type="audio/mpeg"></audio>|
+| Pirates of The Carribean | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/001.1.mp3" type="audio/mpeg"></audio>  | 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/001.4.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/001.4.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/001.4.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/001.4.mp3" type="audio/mpeg"></audio>|
+| My Heart Will Go On | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/002.1.mp3" type="audio/mpeg"></audio>  | 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/002.4.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/002.4.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/002.4.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/002.4.mp3" type="audio/mpeg"></audio>|
+| Beethoven's String | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/003.1.mp3" type="audio/mpeg"></audio>  | 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/003.4.mp3" type="audio/mpeg"></audio>  | 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/003.4.mp3" type="audio/mpeg"></audio>  | 
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/003.4.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/003.4.mp3" type="audio/mpeg"></audio>|
 
 Vibraphone to Piano
 
-|Name| Input Vibraphone  |  DiffTransfer | Universal Network| Ground Truth Piano|
+|Name| Input Vibraphone  |  MambaTransfer (HOP = 0.5) | Universal Network| Ground Truth Piano|
 |---|---|---|---|---|
-| Pirates of The Carribean | <audio controls style="width: 100px;"><source src="audio/music_star_test/001.2.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/separate_model_individual_tracks/001.5.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/001.5.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/001.5.wav" type="audio/mpeg"></audio> |
-| My Heart Will Go On | <audio controls style="width: 100px;"><source src="audio/music_star_test/002.2.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/separate_model_individual_tracks/002.5.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/002.5.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/002.5.wav" type="audio/mpeg"></audio> |
-| Beethoven's String | <audio controls style="width: 100px;"><source src="audio/music_star_test/003.2.wav" type="audio/mpeg"></audio>  | <audio controls style="width: 100px;"><source src="audio/est_diffusion/separate_model_individual_tracks/003.5.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/003.5.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/003.5.wav" type="audio/mpeg"></audio> |
+| Pirates of The Carribean | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/001.2.mp3" type="audio/mpeg"></audio>  | 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/001.5.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/001.5.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/001.5.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/001.5.mp3" type="audio/mpeg"></audio> |
+| My Heart Will Go On | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/002.2.mp3" type="audio/mpeg"></audio>  | 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/002.5.mp3" type="audio/mpeg"></audio>  | 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/002.5.mp3" type="audio/mpeg"></audio>  | 
+ <audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/002.5.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/002.5.mp3" type="audio/mpeg"></audio> |
+| Beethoven's String | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/003.2.mp3" type="audio/mpeg"></audio>  | 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/003.5.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/003.5.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/003.5.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/003.5.mp3" type="audio/mpeg"></audio> |
 
-Clarinet/Vibraphone to Piano/Strings (single/mix)
 
-|Name| DiffTransfer | Universal Network| Ground Truth Piano/Strings|
-|---|---|---|---|
-| Pirates of The Carribean | <audio controls style="width: 100px;"><source src="audio/est_diffusion/separate_model/001.3.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model/001.3.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/001.3.wav" type="audio/mpeg"></audio> |
-| My Heart Will Go On | <audio controls style="width: 100px;"><source src="audio/est_diffusion/separate_model/002.3.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model/002.3.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/002.3.wav" type="audio/mpeg"></audio> |
-| Beethoven's String | <audio controls style="width: 100px;"><source src="audio/est_diffusion/separate_model/003.3.wav" type="audio/mpeg"></audio>  |  <audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model/003.3.wav" type="audio/mpeg"></audio> | <audio controls style="width: 100px;"><source src="audio/music_star_test/003.3.wav" type="audio/mpeg"></audio> |
 
+Strings to Clarinet
+
+|Name| Input Strings  |  MambaTransfer (HOP = 0.5) | Universal Network| Ground Truth Clarinet|
+|---|---|---|---|---|
+| Pirates of The Carribean | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/001.4.mp3" type="audio/mpeg"></audio>| 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/001.1.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/001.1.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/001.1.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/001.1.mp3" type="audio/mpeg"></audio>|
+| My Heart Will Go On | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/002.4.mp3" type="audio/mpeg"></audio>| 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/0021.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/0021.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/002.1.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/002.1.mp3" type="audio/mpeg"></audio> |
+| Beethoven's String | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/003.4.mp3" type="audio/mpeg"></audio>| 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/003.1.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/003.1.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/003.1.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/003.1.mp3" type="audio/mpeg"></audio>  |
+
+Piano to Vibraphone
+
+|Name| Input Piano  |  MambaTransfer (HOP = 0.5) | Universal Network| Ground Truth Vibraphone|
+|---|---|---|---|---|
+| Pirates of The Carribean | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/001.5.mp3" type="audio/mpeg"></audio>| 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/001.2.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/001.2.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/001.2.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/001.2.mp3" type="audio/mpeg"></audio>  |
+| My Heart Will Go On | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/002.5.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/002.2.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/002.2.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/002.2.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/002.2.mp3" type="audio/mpeg"></audio>  |
+| Beethoven's String | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/003.5.mp3" type="audio/mpeg"></audio>| 
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_05_Baby/003.2.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="TEST_ALL/HOP_01_Baby/003.2.mp3" type="audio/mpeg"></audio>  |  
+<audio controls style="width: 100px;"><source src="audio/est_music_net/separate_model_individual_tracks/003.2.mp3" type="audio/mpeg"></audio> | 
+<audio controls style="width: 100px;"><source src="audio/music_star_test/003.2.mp3" type="audio/mpeg"></audio>   |
