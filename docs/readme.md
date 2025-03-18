@@ -1,4 +1,4 @@
-# MambaTransfer: raw audio timbre tranferv with state space models 
+# MambaTransfer: raw audio timbre tranfer with state space models 
 
 ## Audio examples 
 
